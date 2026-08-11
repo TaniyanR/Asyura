@@ -1,0 +1,12 @@
+Options -Indexes
+RewriteEngine On
+
+RewriteRule ^(?:config|src|storage)(?:/|$) - [F,L]
+RewriteRule ^robots\.txt$ public/robots.php [L,QSA]
+RewriteRule ^sitemap\.xml$ public/sitemap.php [L,QSA]
+RewriteRule ^feed/([a-zA-Z0-9]+)/category/([^/]+)/([a-z0-9-]+)/?$ feed/random.php?site=$1&category=$2&slug=$3 [L,QSA]
+RewriteRule ^feed/([a-zA-Z0-9]+)/([a-z0-9-]+)/?$ feed/random.php?site=$1&slug=$2 [L,QSA]
+
+<FilesMatch "^(?:\.env|composer\.(?:json|lock)|phpunit\.xml)$">
+    Require all denied
+</FilesMatch>
