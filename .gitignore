@@ -1,0 +1,8 @@
+/config/config.php
+/storage/exports/*.zip
+/storage/logs/*
+!/storage/exports/.gitkeep
+!/storage/logs/.gitkeep
+*.log
+.DS_Store
+Thumbs.db

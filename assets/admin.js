@@ -1,0 +1,2 @@
+document.addEventListener('click',function(e){var b=e.target.closest('[data-copy]');if(!b)return;var el=document.querySelector(b.dataset.copy);if(!el)return;navigator.clipboard.writeText(el.textContent).then(function(){var old=b.textContent;b.textContent='コピーしました';setTimeout(function(){b.textContent=old},1400)})});
+document.addEventListener('submit',function(e){var f=e.target;if(!f.matches('[data-confirm]'))return;var message=f.dataset.confirm||'実行しますか？';if(!window.confirm(message))e.preventDefault()});
