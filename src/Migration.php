@@ -36,6 +36,8 @@ final class Migration
                 site_key VARCHAR(64) NOT NULL,
                 name VARCHAR(255) NOT NULL,
                 url VARCHAR(2048) NOT NULL,
+                login_url VARCHAR(2048) NULL,
+                github_url VARCHAR(2048) NULL,
                 normalized_url VARCHAR(2048) NOT NULL,
                 category VARCHAR(100) NULL,
                 description TEXT NULL,
@@ -361,7 +363,7 @@ final class Migration
         }
 
         $defaults = [
-            'schema_version' => '1',
+            'schema_version' => '2',
             'ranking_period_days' => '3',
             'distribution_window_hours' => '24',
             'raw_retention_days' => '180',
@@ -375,5 +377,39 @@ final class Migration
         }
         $exclude=$db->prepare('INSERT IGNORE INTO excluded_referrers (label,pattern,match_type) VALUES (?,?,\'contains\')');
         foreach(['Google'=>'google.','Yahoo!'=>'yahoo.','Bing'=>'bing.com','DuckDuckGo'=>'duckduckgo.com','Baidu'=>'baidu.com','Yandex'=>'yandex.'] as $label=>$pattern)$exclude->execute([$label,$pattern]);
+    }
+
+    /**
+     * Apply additive updates to an existing installation without replacing data.
+     */
+    public static function upgrade(PDO $db): void
+    {
+        $version = (int) ($db->query(
+            "SELECT setting_value FROM settings WHERE setting_key='schema_version' LIMIT 1"
+        )->fetchColumn() ?: 1);
+        if ($version >= 2) {
+            return;
+        }
+
+        $exists = $db->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?'
+        );
+        $columns = [
+            'login_url' => 'ALTER TABLE sites ADD COLUMN login_url VARCHAR(2048) NULL AFTER url',
+            'github_url' => 'ALTER TABLE sites ADD COLUMN github_url VARCHAR(2048) NULL AFTER login_url',
+        ];
+        foreach ($columns as $column => $sql) {
+            $exists->execute(['sites', $column]);
+            if ((int) $exists->fetchColumn() === 0) {
+                $db->exec($sql);
+            }
+        }
+
+        $stmt = $db->prepare(
+            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','2')
+             ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)"
+        );
+        $stmt->execute();
     }
 }

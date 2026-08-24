@@ -18,7 +18,8 @@ final class AdminController
         }
         if (!Security::verifyCsrf($_POST['csrf_token'] ?? null)) {
             View::flash('画面の有効期限が切れました。もう一度お試しください。', 'error');
-            redirect(app_url('admin/?page=' . urlencode((string) ($_GET['page'] ?? 'dashboard'))));
+            $siteId = (int) ($_SESSION['admin_site_id'] ?? 0);
+            redirect(app_url('admin/?page=' . urlencode((string) ($_GET['page'] ?? 'dashboard')) . ($siteId > 0 ? '&site=' . $siteId : '')));
         }
 
         $action = (string) ($_POST['action'] ?? '');
@@ -51,7 +52,8 @@ final class AdminController
             error_log('[Asyura admin] '.$e->getMessage());
             View::flash('処理中にエラーが発生しました。入力内容とサーバーログを確認してください。', 'error');
         }
-        redirect(app_url('admin/?page=' . urlencode((string) ($_GET['page'] ?? 'dashboard'))));
+        $siteId = (int) ($_SESSION['admin_site_id'] ?? 0);
+        redirect(app_url('admin/?page=' . urlencode((string) ($_GET['page'] ?? 'dashboard')) . ($siteId > 0 ? '&site=' . $siteId : '')));
     }
 
     private function saveSite(): void
@@ -80,10 +82,11 @@ final class AdminController
             throw new \InvalidArgumentException('RSS URLが正しくありません。');
         }
         $id = (int) ($_POST['id'] ?? 0);
-        $values = [(int) $_POST['site_id'], Security::cleanText($_POST['name'] ?? '', 255), $url, isset($_POST['active']) ? 1 : 0];
+        $values = [$this->contextSiteId(), Security::cleanText($_POST['name'] ?? '', 255), $url, isset($_POST['active']) ? 1 : 0];
         if ($id > 0) {
-            $stmt = $this->db->prepare('UPDATE rss_feeds SET site_id=?,name=?,feed_url=?,active=? WHERE id=?');
+            $stmt = $this->db->prepare('UPDATE rss_feeds SET site_id=?,name=?,feed_url=?,active=? WHERE id=? AND site_id=?');
             $values[] = $id;
+            $values[] = $this->contextSiteId();
         } else {
             $stmt = $this->db->prepare('INSERT INTO rss_feeds (site_id,name,feed_url,active) VALUES (?,?,?,?)');
         }
@@ -99,7 +102,7 @@ final class AdminController
         $slots = array_values(array_intersect((array) ($_POST['slots'] ?? []), range('A', 'E')));
         $id = (int) ($_POST['id'] ?? 0);
         $values = [
-            (int) $_POST['site_id'], Security::cleanText($_POST['partner_name'] ?? '', 255), $url,
+            $this->contextSiteId(), Security::cleanText($_POST['partner_name'] ?? '', 255), $url,
             UrlNormalizer::normalize($url), Security::cleanText($_POST['description'] ?? '', 2000) ?: null,
             Security::cleanText($_POST['category'] ?? '', 100) ?: null, implode(',', $slots),
             in_array($_POST['status'] ?? '', ['pending','approved','paused','rejected','removed'], true) ? $_POST['status'] : 'pending',
@@ -108,8 +111,9 @@ final class AdminController
             isset($_POST['is_special']) ? 1 : 0, isset($_POST['is_rescue']) ? 1 : 0, isset($_POST['is_excluded']) ? 1 : 0,
         ];
         if ($id > 0) {
-            $stmt = $this->db->prepare('UPDATE reciprocal_links SET site_id=?,partner_name=?,partner_url=?,normalized_url=?,description=?,category=?,slots=?,status=?,rel_type=?,open_new_tab=?,is_priority=?,is_special=?,is_rescue=?,is_excluded=? WHERE id=?');
+            $stmt = $this->db->prepare('UPDATE reciprocal_links SET site_id=?,partner_name=?,partner_url=?,normalized_url=?,description=?,category=?,slots=?,status=?,rel_type=?,open_new_tab=?,is_priority=?,is_special=?,is_rescue=?,is_excluded=? WHERE id=? AND site_id=?');
             $values[] = $id;
+            $values[] = $this->contextSiteId();
         } else {
             $stmt = $this->db->prepare('INSERT INTO reciprocal_links (site_id,partner_name,partner_url,normalized_url,description,category,slots,status,rel_type,open_new_tab,is_priority,is_special,is_rescue,is_excluded) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
         }
@@ -119,6 +123,7 @@ final class AdminController
     private function saveWidget(): void
     {
         $id = (int) ($_POST['id'] ?? 0);
+        $check=$this->db->prepare('SELECT COUNT(*) FROM widgets WHERE id=? AND site_id=?');$check->execute([$id,$this->contextSiteId()]);if(!(int)$check->fetchColumn())throw new \InvalidArgumentException('選択中のサイトにこの表示パーツはありません。');
         $feedIds=array_values(array_filter(array_map('intval',(array)($_POST['feed_ids']??[])),static fn(int $id):bool=>$id>0));
         $configJson=json_encode(['image_required'=>isset($_POST['image_required']),'feed_ids'=>$feedIds],JSON_UNESCAPED_UNICODE);
         $stmt = $this->db->prepare('UPDATE widgets SET name=?,enabled=?,item_limit=?,width=?,height=?,template_html=?,custom_css=?,config_json=? WHERE id=?');
@@ -133,7 +138,7 @@ final class AdminController
 
     private function saveNotice(): void
     {
-        $siteId = (int) ($_POST['site_id'] ?? 0) ?: null;
+        $siteId = isset($_POST['all_sites']) ? null : $this->contextSiteId();
         $stmt = $this->db->prepare('INSERT INTO notices (site_id,title,body,notice_type,is_public,is_pinned,starts_at,ends_at) VALUES (?,?,?,?,?,?,?,?)');
         $stmt->execute([
             $siteId, Security::cleanText($_POST['title'] ?? '', 255), Security::cleanText($_POST['body'] ?? '', 10000),
@@ -151,7 +156,7 @@ final class AdminController
         }
         $type = in_array($_POST['match_type'] ?? '', ['host','prefix','contains','exact'], true) ? $_POST['match_type'] : 'host';
         $stmt = $this->db->prepare('INSERT INTO site_aliases (site_id,alias_url,normalized_url,match_type,allow_tracking_origin) VALUES (?,?,?,?,?)');
-        $stmt->execute([(int) $_POST['site_id'], $url, UrlNormalizer::normalize($url), $type, isset($_POST['allow_tracking_origin'])?1:0]);
+        $stmt->execute([$this->contextSiteId(), $url, UrlNormalizer::normalize($url), $type, isset($_POST['allow_tracking_origin'])?1:0]);
     }
 
     private function saveRotation(): void
@@ -167,7 +172,7 @@ final class AdminController
         }
         $feedIds=array_values(array_filter(array_map('intval',(array)($_POST['feed_ids']??[])),static fn(int $id):bool=>$id>0));
         $stmt = $this->db->prepare('INSERT INTO rotation_feeds (site_id,slug,category,interval_minutes,image_required,feed_ids_json,active) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE interval_minutes=VALUES(interval_minutes),image_required=VALUES(image_required),feed_ids_json=VALUES(feed_ids_json),active=VALUES(active)');
-        $stmt->execute([(int) $_POST['site_id'], $slug, Security::cleanText($_POST['category'] ?? '', 255), $interval, isset($_POST['image_required']) ? 1 : 0, json_encode($feedIds), isset($_POST['active']) ? 1 : 0]);
+        $stmt->execute([$this->contextSiteId(), $slug, Security::cleanText($_POST['category'] ?? '', 255), $interval, isset($_POST['image_required']) ? 1 : 0, json_encode($feedIds), isset($_POST['active']) ? 1 : 0]);
     }
 
     private function saveExcludedReferrer(): void
@@ -178,9 +183,9 @@ final class AdminController
     private function updateRequest(): void
     {
         $status = in_array($_POST['status'] ?? '', ['new','reviewing','approved','rejected','registered','removed'], true) ? $_POST['status'] : 'new';
-        $stmt = $this->db->prepare('UPDATE link_requests SET status=?,public_message=?,removal_reason=?,notify_status_page=?,notify_email=?,publish_notice=? WHERE id=?');
-        $stmt->execute([$status, Security::cleanText($_POST['public_message'] ?? '', 3000) ?: null, Security::cleanText($_POST['removal_reason'] ?? '', 3000) ?: null, isset($_POST['notify_status_page']) ? 1 : 0, isset($_POST['notify_email']) ? 1 : 0, isset($_POST['publish_notice']) ? 1 : 0, (int) $_POST['id']]);
-        $q=$this->db->prepare('SELECT r.*,s.name target_name,s.id target_id FROM link_requests r JOIN sites s ON s.id=r.site_id WHERE r.id=?');$q->execute([(int)$_POST['id']]);$request=$q->fetch();
+        $stmt = $this->db->prepare('UPDATE link_requests SET status=?,public_message=?,removal_reason=?,notify_status_page=?,notify_email=?,publish_notice=? WHERE id=? AND site_id=?');
+        $stmt->execute([$status, Security::cleanText($_POST['public_message'] ?? '', 3000) ?: null, Security::cleanText($_POST['removal_reason'] ?? '', 3000) ?: null, isset($_POST['notify_status_page']) ? 1 : 0, isset($_POST['notify_email']) ? 1 : 0, isset($_POST['publish_notice']) ? 1 : 0, (int) $_POST['id'], $this->contextSiteId()]);
+        $q=$this->db->prepare('SELECT r.*,s.name target_name,s.id target_id FROM link_requests r JOIN sites s ON s.id=r.site_id WHERE r.id=? AND r.site_id=?');$q->execute([(int)$_POST['id'],$this->contextSiteId()]);$request=$q->fetch();
         $labels=['new'=>'受付完了','reviewing'=>'確認中','approved'=>'承認','rejected'=>'見送り','registered'=>'登録完了','removed'=>'解除完了'];
         if($request&&$request['notify_email']){$subject='[阿修羅] '.$labels[$status].' - '.$request['receipt_no'];$body=$request['site_name']." 様\n\n相互リンク依頼の状態が「".$labels[$status]."」に更新されました。\n";if($request['public_message'])$body.="\n".$request['public_message']."\n";if($status==='removed'&&$request['removal_reason'])$body.="\n解除理由：".$request['removal_reason']."\n";$from=str_replace(["\r","\n"],'',(string)($this->config['mail']['from']??'noreply@localhost'));@mail($request['email'],$subject,$body,'From: '.$from."\r\nContent-Type: text/plain; charset=UTF-8");}
         if($request&&$request['publish_notice']&&in_array($status,['registered','removed'],true)){$title=$status==='registered'?'相互リンク登録完了':'相互リンク解除完了';$body=$request['site_name'].'：'.$labels[$status];$this->db->prepare('INSERT INTO notices (site_id,title,body,notice_type,is_public) VALUES (?,?,?,?,1)')->execute([$request['target_id'],$title,$body,$status==='registered'?'registered':'removed']);}
@@ -222,7 +227,25 @@ final class AdminController
         if (!in_array($table, $allowed, true)) {
             throw new \InvalidArgumentException('削除対象が正しくありません。');
         }
-        $this->db->prepare("DELETE FROM {$table} WHERE id = ?")->execute([(int) ($_POST['id'] ?? 0)]);
+        $id=(int)($_POST['id']??0);
+        if(in_array($table,['rss_feeds','reciprocal_links','site_aliases','rotation_feeds'],true)){
+            $this->db->prepare("DELETE FROM {$table} WHERE id=? AND site_id=?")->execute([$id,$this->contextSiteId()]);
+            return;
+        }
+        if($table==='notices'){
+            $this->db->prepare('DELETE FROM notices WHERE id=? AND (site_id=? OR site_id IS NULL)')->execute([$id,$this->contextSiteId()]);
+            return;
+        }
+        $this->db->prepare("DELETE FROM {$table} WHERE id = ?")->execute([$id]);
+    }
+
+    private function contextSiteId(): int
+    {
+        $siteId=(int)($_SESSION['admin_site_id']??0);
+        if($siteId<1)throw new \InvalidArgumentException('管理サイトを選択してください。');
+        $stmt=$this->db->prepare('SELECT COUNT(*) FROM sites WHERE id=?');$stmt->execute([$siteId]);
+        if(!(int)$stmt->fetchColumn())throw new \InvalidArgumentException('管理サイトが正しくありません。');
+        return $siteId;
     }
 
     private function sanitizeTemplate(string $html): string

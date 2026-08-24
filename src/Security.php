@@ -47,7 +47,7 @@ final class Security
         header('Referrer-Policy: strict-origin-when-cross-origin');
         header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
         if ($policy === 'private') {
-            header('X-Robots-Tag: noindex, nofollow, noarchive');
+            header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex');
             header("Content-Security-Policy: default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'self'");
         }
     }
