@@ -23,9 +23,11 @@ final class SiteService
         }
         $this->db->beginTransaction();
         try {
-            $stmt = $this->db->prepare('INSERT INTO sites (public_id,site_key,name,url,normalized_url,category,description,admin_email,active,ranking_enabled,links_enabled,rss_enabled,rotation_enabled,is_priority,priority_multiplier,is_special,special_points,is_rescue,rescue_min_points,is_excluded,contact_ads_notice,contact_links_notice,contact_custom_enabled,contact_custom_text) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+            $stmt = $this->db->prepare('INSERT INTO sites (public_id,site_key,name,url,login_url,github_url,normalized_url,category,description,admin_email,active,ranking_enabled,links_enabled,rss_enabled,rotation_enabled,is_priority,priority_multiplier,is_special,special_points,is_rescue,rescue_min_points,is_excluded,contact_ads_notice,contact_links_notice,contact_custom_enabled,contact_custom_text) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
             $stmt->execute([
-                Security::randomToken(8), Security::randomToken(24), $name, $url, UrlNormalizer::normalize($url),
+                Security::randomToken(8), Security::randomToken(24), $name, $url,
+                self::optionalUrl($data['login_url'] ?? null, 'ログインURL'), self::githubUrl($data['github_url'] ?? null),
+                UrlNormalizer::normalize($url),
                 Security::cleanText($data['category'] ?? '', 100) ?: null,
                 Security::cleanText($data['description'] ?? '', 2000) ?: null,
                 filter_var($data['admin_email'] ?? '', FILTER_VALIDATE_EMAIL) ?: null,
@@ -56,9 +58,10 @@ final class SiteService
         if ($id < 1 || $url === '' || $name === '') {
             throw new \InvalidArgumentException('サイト名とURLを確認してください。');
         }
-        $stmt = $this->db->prepare('UPDATE sites SET name=?,url=?,normalized_url=?,category=?,description=?,admin_email=?,active=?,ranking_enabled=?,links_enabled=?,rss_enabled=?,rotation_enabled=?,is_priority=?,priority_multiplier=?,is_special=?,special_points=?,is_rescue=?,rescue_min_points=?,is_excluded=?,contact_ads_notice=?,contact_links_notice=?,contact_custom_enabled=?,contact_custom_text=? WHERE id=?');
+        $stmt = $this->db->prepare('UPDATE sites SET name=?,url=?,login_url=?,github_url=?,normalized_url=?,category=?,description=?,admin_email=?,active=?,ranking_enabled=?,links_enabled=?,rss_enabled=?,rotation_enabled=?,is_priority=?,priority_multiplier=?,is_special=?,special_points=?,is_rescue=?,rescue_min_points=?,is_excluded=?,contact_ads_notice=?,contact_links_notice=?,contact_custom_enabled=?,contact_custom_text=? WHERE id=?');
         $stmt->execute([
-            $name, $url, UrlNormalizer::normalize($url), Security::cleanText($data['category'] ?? '', 100) ?: null,
+            $name, $url, self::optionalUrl($data['login_url'] ?? null, 'ログインURL'), self::githubUrl($data['github_url'] ?? null),
+            UrlNormalizer::normalize($url), Security::cleanText($data['category'] ?? '', 100) ?: null,
             Security::cleanText($data['description'] ?? '', 2000) ?: null,
             filter_var($data['admin_email'] ?? '', FILTER_VALIDATE_EMAIL) ?: null,
             isset($data['active']) ? 1 : 0, isset($data['ranking_enabled']) ? 1 : 0,
@@ -70,6 +73,32 @@ final class SiteService
             isset($data['contact_ads_notice']) ? 1 : 0, isset($data['contact_links_notice']) ? 1 : 0,
             isset($data['contact_custom_enabled']) ? 1 : 0, Security::cleanText($data['contact_custom_text'] ?? '', 3000) ?: null, $id,
         ]);
+    }
+
+    private static function optionalUrl(mixed $value, string $label): ?string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+        $url = Security::safeUrl($value);
+        if ($url === '') {
+            throw new \InvalidArgumentException($label . 'はhttp://またはhttps://から始まる有効なURLを入力してください。');
+        }
+        return $url;
+    }
+
+    private static function githubUrl(mixed $value): ?string
+    {
+        $url = self::optionalUrl($value, 'GitHub URL');
+        if ($url === null) {
+            return null;
+        }
+        $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        if (!in_array($host, ['github.com', 'www.github.com'], true)) {
+            throw new \InvalidArgumentException('GitHub URLにはgithub.comのURLを入力してください。');
+        }
+        return $url;
     }
 
     public function deletePermanently(int $id): void

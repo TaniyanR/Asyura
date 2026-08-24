@@ -26,4 +26,5 @@ if (!is_file($configFile)) {
 $config = require $configFile;
 date_default_timezone_set($config['timezone'] ?? 'Asia/Tokyo');
 $db = \Asyura\Database::connect($config);
+\Asyura\Migration::upgrade($db);
 require ASYURA_ROOT . '/src/Helpers.php';

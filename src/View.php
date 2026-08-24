@@ -12,15 +12,15 @@ final class View
             'dashboard' => 'ダッシュボード', 'sites' => 'サイト管理', 'analytics' => 'アクセス解析',
             'ranking' => '逆アクセスランキング', 'links' => '相互リンク', 'requests' => '相互リンク依頼',
             'rss' => '相互RSS', 'rotation' => '過去記事再配信', 'notices' => 'お知らせ',
-            'urls' => 'URL統一・除外', 'data' => 'データ管理', 'settings' => '設定',
+            'urls' => 'URL統一・除外', 'management_links' => '管理リンク', 'data' => 'データ管理', 'settings' => '設定',
         ];
         $siteId = (int) ($currentSite['id'] ?? 0);
         $siteQuery = $siteId > 0 ? '&site=' . $siteId : '';
-        echo '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>' . e($title) . ' ‹ 阿修羅</title><link rel="stylesheet" href="' . e(app_url('assets/admin.css')) . '"></head><body>';
+        echo '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex"><title>' . e($title) . ' ‹ 阿修羅</title><link rel="stylesheet" href="' . e(app_url('assets/admin.css')) . '"></head><body>';
         echo '<div class="topbar"><a class="topbar-brand" href="' . e(app_url('admin/?page=dashboard' . $siteQuery)) . '">阿修羅</a><span class="topbar-current">' . ($currentSite ? e($currentSite['name']) . ' を管理中' : '管理サイト未登録') . '</span><span class="spacer"></span><span class="topbar-user">' . e($_SESSION['admin_username'] ?? 'admin') . '</span><a href="' . e(app_url('logout.php')) . '">ログアウト</a></div>';
         echo '<aside class="sidebar"><div class="logo"><span class="logo-mark">阿</span><span>阿修羅</span></div><nav>';
         foreach ($menus as $key => $label) {
-            $global = in_array($key, ['sites','data','settings'], true);
+            $global = in_array($key, ['sites','management_links','data','settings'], true);
             echo '<a class="menu-' . e($key) . ' ' . ($key === $active ? 'active' : '') . '" href="' . e(app_url('admin/?page=' . $key . ($global ? '' : $siteQuery))) . '"><span class="menu-dot"></span>' . e($label) . '</a>';
         }
         echo '</nav></aside><main class="content">';
@@ -40,8 +40,8 @@ final class View
         } else {
             echo '<a class="button primary" href="' . e(app_url('admin/?page=sites&new=1')) . '">最初のサイトを登録</a>';
         }
-        echo '</section><div class="page-heading"><div><span class="eyebrow">' . (in_array($active, ['sites','data','settings'], true) ? '阿修羅 全体管理' : 'サイト別管理') . '</span><h1 class="page-title">' . e($title) . '</h1></div>';
-        if ($currentSite && !in_array($active, ['sites','data','settings'], true)) {
+        echo '</section><div class="page-heading"><div><span class="eyebrow">' . (in_array($active, ['sites','management_links','data','settings'], true) ? '阿修羅 全体管理' : 'サイト別管理') . '</span><h1 class="page-title">' . e($title) . '</h1></div>';
+        if ($currentSite && !in_array($active, ['sites','management_links','data','settings'], true)) {
             echo '<span class="site-status ' . (!empty($currentSite['active']) ? 'is-active' : '') . '">' . (!empty($currentSite['active']) ? '計測中' : '計測停止') . '</span>';
         }
         echo '</div>';
