@@ -66,24 +66,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
         $user = Security::cleanText($_POST['db_user'] ?? '', 255);
         $pass = (string) ($_POST['db_pass'] ?? '');
 
-        $adminUser = Security::cleanText($_POST['admin_user'] ?? '', 100);
-        $adminPass = (string) ($_POST['admin_pass'] ?? '');
-        $adminPassConfirm = (string) ($_POST['admin_pass_confirm'] ?? '');
-
         if ($name === '' || $user === '') {
             $error = 'DB名とDBユーザーを入力してください。';
-        } elseif (!$installed && ($adminUser === '' || strlen($adminPass) < 10)) {
-            $error = '管理者ユーザー名と10文字以上のパスワードを入力してください。';
-        } elseif (!$installed && $adminPass !== $adminPassConfirm) {
-            $error = '管理者パスワードが一致していません。';
         } else {
             try {
-                $pdoOptions = [
-                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                    PDO::ATTR_EMULATE_PREPARES => false,
-                ];
+                $pdoOptions = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false];
                 $dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $host, $port, $name);
-
                 try {
                     $db = new PDO($dsn, $user, $pass, $pdoOptions);
                 } catch (PDOException $e) {
@@ -101,22 +89,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
                 $config['app_url'] = $config['app_url'] ?? $appUrl;
                 $config['app_key'] = $config['app_key'] ?? Security::randomToken(32);
                 $config['timezone'] = $config['timezone'] ?? 'Asia/Tokyo';
-                $config['db'] = [
-                    'host' => $host,
-                    'port' => $port,
-                    'name' => $name,
-                    'user' => $user,
-                    'pass' => $pass,
-                    'charset' => 'utf8mb4',
-                ];
+                $config['db'] = ['host' => $host, 'port' => $port, 'name' => $name, 'user' => $user, 'pass' => $pass, 'charset' => 'utf8mb4'];
                 $config['cron_key'] = $config['cron_key'] ?? Security::randomToken(24);
                 $config['mail'] = $config['mail'] ?? ['from' => 'noreply@localhost', 'from_name' => '阿修羅'];
 
                 Migration::run($db);
 
+                $needsPasswordSetup = false;
                 if (!$installed) {
-                    $stmt = $db->prepare('INSERT INTO admins (username, password_hash, email) VALUES (?, ?, ?)');
-                    $stmt->execute([$adminUser, password_hash($adminPass, PASSWORD_DEFAULT), null]);
+                    $adminCount = (int) $db->query('SELECT COUNT(*) FROM admins')->fetchColumn();
+                    if ($adminCount === 0) {
+                        $temporaryPassword = Security::randomToken(48);
+                        $stmt = $db->prepare('INSERT INTO admins (username, password_hash, email) VALUES (?, ?, ?)');
+                        $stmt->execute(['admin', password_hash($temporaryPassword, PASSWORD_DEFAULT), null]);
+                        $flag = $db->prepare('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)');
+                        $flag->execute(['initial_password_pending', '1']);
+                        $needsPasswordSetup = true;
+                    }
                 }
 
                 $export = var_export($config, true);
@@ -127,7 +116,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
                 }
                 @chmod($configPath, 0640);
 
-                header('Location: ' . $appUrl . '/login.php?' . ($installed ? 'db_repaired=1' : 'installed=1'));
+                if ($repairMode) {
+                    header('Location: ' . $appUrl . '/login.php?db_repaired=1');
+                } elseif ($needsPasswordSetup) {
+                    header('Location: ' . $appUrl . '/setup.php');
+                } else {
+                    header('Location: ' . $appUrl . '/login.php?installed=1');
+                }
                 exit;
             } catch (Throwable $e) {
                 $error = $installed
@@ -142,36 +137,12 @@ $defaultDbName = (string) (($existingConfig['db']['name'] ?? '') ?: 'asyura');
 $defaultDbUser = (string) (($existingConfig['db']['user'] ?? '') ?: 'root');
 ?>
 <!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow"><title>阿修羅 インストール</title>
-<link rel="stylesheet" href="assets/admin.css"><link rel="stylesheet" href="assets/admin-refined.css"></head><body class="login-body">
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>阿修羅 インストール</title><link rel="stylesheet" href="assets/admin.css"><link rel="stylesheet" href="assets/admin-refined.css"></head><body class="login-body">
 <main class="install-card"><div class="brand-mark">阿</div><h1>阿修羅</h1><p class="muted">アクセス解析・相互管理ツール</p>
-
 <?php if ($installed && $dbReachable): ?>
-    <div class="notice success">阿修羅はインストール済みです。<a href="login.php">ログイン画面へ</a></div>
+<div class="notice success">阿修羅はインストール済みです。<a href="login.php">ログイン画面へ</a></div>
 <?php else: ?>
-    <?php if ($repairMode): ?><div class="notice warning">データベースへ接続できません。接続情報を確認して保存してください。既存の管理者アカウントやサイトデータは初期化しません。</div><?php endif; ?>
-    <?php if ($error): ?><div class="notice error"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div><?php endif; ?>
-    <form method="post" autocomplete="off">
-        <?= '<input type="hidden" name="csrf_token" value="' . htmlspecialchars(Security::csrfToken(), ENT_QUOTES, 'UTF-8') . '">' ?>
-        <h2>データベース</h2>
-        <div class="form-grid">
-            <label>DB名<input name="db_name" value="<?= htmlspecialchars($defaultDbName, ENT_QUOTES, 'UTF-8') ?>" required></label>
-            <label>DBユーザー<input name="db_user" value="<?= htmlspecialchars($defaultDbUser, ENT_QUOTES, 'UTF-8') ?>" required></label>
-            <label class="span-2">DBパスワード<input name="db_pass" type="password" autocomplete="new-password"></label>
-        </div>
-
-        <?php if (!$installed): ?>
-            <h2>管理者アカウント</h2>
-            <div class="form-grid">
-                <label class="span-2">管理者ユーザー名<input name="admin_user" autocomplete="username" required></label>
-                <label>管理者パスワード<input name="admin_pass" type="password" minlength="10" autocomplete="new-password" required></label>
-                <label>パスワード確認<input name="admin_pass_confirm" type="password" minlength="10" autocomplete="new-password" required></label>
-            </div>
-            <p class="description">固定の初期ID・初期パスワードは使用しません。ここで管理者アカウントを設定します。</p>
-        <?php endif; ?>
-
-        <button class="button primary" type="submit"><?= $repairMode ? 'DB接続情報を保存' : 'インストールする' ?></button>
-    </form>
-<?php endif; ?>
-</main></body></html>
+<?php if ($repairMode): ?><div class="notice warning">データベースへ接続できません。接続情報を確認して保存してください。既存データは初期化しません。</div><?php endif; ?>
+<?php if ($error): ?><div class="notice error"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div><?php endif; ?>
+<form method="post" autocomplete="off"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Security::csrfToken(), ENT_QUOTES, 'UTF-8') ?>"><h2>データベース</h2><div class="form-grid"><label>DB名<input name="db_name" value="<?= htmlspecialchars($defaultDbName, ENT_QUOTES, 'UTF-8') ?>" required></label><label>DBユーザー<input name="db_user" value="<?= htmlspecialchars($defaultDbUser, ENT_QUOTES, 'UTF-8') ?>" required></label><label class="span-2">DBパスワード<input name="db_pass" type="password" autocomplete="new-password"></label></div><p class="description"><?= $repairMode ? 'DB接続情報だけを更新します。' : 'インストール後に初回パスワードを設定します。管理者ユーザー名は admin です。' ?></p><button class="button primary" type="submit"><?= $repairMode ? 'DB接続情報を保存' : 'インストールする' ?></button></form>
+<?php endif; ?></main></body></html>

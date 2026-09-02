@@ -8,6 +8,13 @@ use Asyura\Security;
 
 Security::headers();
 Security::startSession();
+
+$pendingStmt = $db->prepare('SELECT setting_value FROM settings WHERE setting_key = ? LIMIT 1');
+$pendingStmt->execute(['initial_password_pending']);
+if ($pendingStmt->fetchColumn() === '1') {
+    redirect(app_url('setup.php'));
+}
+
 if (Auth::check()) {
     redirect(app_url('admin/'));
 }
@@ -26,7 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 ?>
 <!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>ログイン ‹ 阿修羅</title><link rel="stylesheet" href="<?= e(app_url('assets/admin.css')) ?>"><link rel="stylesheet" href="<?= e(app_url('assets/admin-refined.css')) ?>"></head>
 <body class="login-body"><main class="login-card"><div class="brand-mark">阿</div><h1>阿修羅</h1><p class="muted">管理画面へログイン</p>
-<?php if (isset($_GET['installed'])): ?><div class="notice success">インストールが完了しました。設定した管理者アカウントでログインしてください。</div><?php endif; ?>
+<?php if (isset($_GET['installed'])): ?><div class="notice success">インストールが完了しました。</div><?php endif; ?>
+<?php if (isset($_GET['password_set'])): ?><div class="notice success">初回パスワードを設定しました。ユーザー名 admin でログインしてください。</div><?php endif; ?>
 <?php if (isset($_GET['db_repaired'])): ?><div class="notice success">データベース接続情報を更新しました。</div><?php endif; ?>
 <?php if ($error): ?><div class="notice error"><?= e($error) ?></div><?php endif; ?>
 <form method="post"><?= csrf_field() ?><label>ユーザー名<input name="username" autocomplete="username" required autofocus></label><label>パスワード<input name="password" type="password" autocomplete="current-password" required></label><button class="button primary wide" type="submit">ログイン</button></form></main></body></html>
