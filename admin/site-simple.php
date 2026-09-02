@@ -23,14 +23,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $id = $service->save($_POST);
             View::flash('サイト情報を保存しました。');
-            redirect(app_url('admin/?page=sites&edit=' . $id));
+            redirect(app_url('admin/?page=dashboard&site=' . $id));
         } catch (Throwable $e) {
             View::flash($e instanceof InvalidArgumentException ? $e->getMessage() : '保存中にエラーが発生しました。', 'error');
         }
     }
 }
 
-$sites = $db->query('SELECT * FROM sites ORDER BY name,id')->fetchAll();
+$sites = $db->query('SELECT * FROM sites ORDER BY id')->fetchAll();
 $editId = (int) ($_GET['edit'] ?? 0);
 $site = null;
 if ($editId > 0) {
