@@ -11,117 +11,122 @@ final class View
 
         $siteId = (int) ($currentSite['id'] ?? 0);
         $siteQuery = $siteId > 0 ? '&site=' . $siteId : '';
-        $sitePages = ['dashboard','analytics','ranking','links','requests','rss','rotation','notices','urls'];
-        $isSitePage = in_array($active, $sitePages, true);
-        $displayTitle = $isSitePage && $currentSite ? $title . '｜' . (string) $currentSite['name'] : $title;
+        $displayTitle = $currentSite && $active !== 'sites'
+            ? $title . '｜' . (string) $currentSite['name']
+            : $title;
 
+        $view = (string) ($_GET['view'] ?? '');
         $groups = [
             'access' => [
                 'label' => 'アクセス',
+                'class' => 'nav-access',
+                'pages' => ['analytics','ranking','urls'],
                 'items' => [
-                    'analytics' => 'アクセス解析',
-                    'ranking' => '逆アクセスランキング',
-                    'urls' => 'URL統一・除外',
+                    ['analytics', 'アクセス解析', ''],
+                    ['ranking', '逆アクセスランキング', ''],
+                    ['urls', 'URL統一・除外', ''],
                 ],
             ],
             'links' => [
                 'label' => '相互リンク',
+                'class' => 'nav-links',
+                'pages' => ['links','requests'],
                 'items' => [
-                    'requests' => '申請一覧',
-                    'links' => '登録済みリンク・登録',
+                    ['requests', '申請一覧', ''],
+                    ['links', '登録済みリンク', 'list'],
+                    ['links', '新規登録', 'new'],
                 ],
             ],
             'rss' => [
                 'label' => '相互RSS',
+                'class' => 'nav-rss',
+                'pages' => ['rss'],
                 'items' => [
-                    'rss' => 'RSS管理',
+                    ['rss', 'RSS登録', 'new'],
+                    ['rss', 'RSS一覧', 'list'],
+                    ['rss', '配分・設定', 'settings'],
                 ],
             ],
             'content' => [
                 'label' => 'コンテンツ',
+                'class' => 'nav-content',
+                'pages' => ['rotation','notices'],
                 'items' => [
-                    'rotation' => '過去記事再配信',
-                    'notices' => 'お知らせ',
+                    ['rotation', '過去記事再配信', ''],
+                    ['notices', 'お知らせ', ''],
                 ],
             ],
             'management' => [
                 'label' => '管理',
+                'class' => 'nav-management',
+                'pages' => ['management_links','data','settings'],
                 'items' => [
-                    'management_links' => '管理リンク',
-                    'data' => 'データ管理',
-                    'settings' => '設定',
+                    ['management_links', '管理リンク', ''],
+                    ['data', 'データ管理', ''],
+                    ['settings', '設定', ''],
                 ],
             ],
         ];
 
-        $activeGroup = '';
-        foreach ($groups as $groupKey => $group) {
-            if (isset($group['items'][$active])) {
-                $activeGroup = $groupKey;
-                break;
+        echo '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex"><title>' . e($displayTitle) . ' ‹ 阿修羅</title><link rel="stylesheet" href="' . e(app_url('assets/admin.css')) . '"><link rel="stylesheet" href="' . e(app_url('assets/admin-refined.css')) . '"><link rel="stylesheet" href="' . e(app_url('assets/admin-site-layout.css')) . '"></head><body>';
+
+        // Header: site selector -> Asyura -> logout only.
+        echo '<header class="topbar asyura-topbar">';
+        echo '<button type="button" class="mobile-menu-button" data-mobile-menu-toggle aria-label="メニューを開く" aria-expanded="false"><span></span><span></span><span></span></button>';
+        echo '<div class="header-site-menu" data-site-menu>';
+        echo '<button type="button" class="header-site-trigger" data-site-menu-toggle aria-expanded="false"><span class="site-trigger-label">' . ($currentSite ? e($currentSite['name']) : 'サイト選択') . '</span><span class="site-trigger-arrow">▼</span></button>';
+        echo '<div class="header-site-dropdown" data-site-menu-panel>';
+        echo '<a class="site-menu-register" href="' . e(app_url('admin/?page=sites&new=1')) . '">＋ サイト登録</a>';
+        if ($sites !== []) {
+            echo '<div class="site-menu-divider"></div>';
+            foreach ($sites as $site) {
+                $selected = $siteId === (int) $site['id'];
+                echo '<a class="site-menu-item' . ($selected ? ' is-selected' : '') . '" href="' . e(app_url('admin/?page=dashboard&site=' . (int) $site['id'])) . '"><span>' . e($site['name']) . '</span><small>' . e($site['url']) . '</small></a>';
             }
         }
-
-        echo '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex"><title>' . e($displayTitle) . ' ‹ 阿修羅</title><link rel="stylesheet" href="' . e(app_url('assets/admin.css')) . '"><link rel="stylesheet" href="' . e(app_url('assets/admin-refined.css')) . '"></head><body>';
-
-        echo '<div class="topbar"><button type="button" class="mobile-menu-button" data-mobile-menu-toggle aria-label="メニューを開く" aria-expanded="false"><span></span><span></span><span></span></button><a class="topbar-brand" href="' . e(app_url('admin/?page=dashboard' . $siteQuery)) . '">阿修羅</a><span class="topbar-current">' . ($currentSite ? e($currentSite['name']) . ' を管理中' : '管理サイト未登録') . '</span><span class="spacer"></span><span class="topbar-user">' . e($_SESSION['admin_username'] ?? 'admin') . '</span><a class="topbar-logout" href="' . e(app_url('logout.php')) . '">ログアウト</a></div>';
+        echo '</div></div>';
+        echo '<a class="topbar-brand asyura-brand" href="' . e(app_url('admin/?page=dashboard' . $siteQuery)) . '">阿修羅</a>';
+        echo '<span class="spacer"></span><a class="topbar-logout" href="' . e(app_url('logout.php')) . '">ログアウト</a></header>';
 
         echo '<div class="sidebar-overlay" data-sidebar-overlay></div>';
-        echo '<aside class="sidebar" data-sidebar><div class="sidebar-head"><div class="logo"><span class="logo-mark">阿</span><span><strong>阿修羅</strong><small>管理画面</small></span></div><button type="button" class="sidebar-close" data-mobile-menu-close aria-label="メニューを閉じる">×</button></div><nav class="admin-nav">';
-        echo '<div class="nav-section-label">基本</div>';
-        echo self::menuLink('dashboard', 'ダッシュボード', $active, $siteQuery);
-        echo self::menuLink('sites', 'サイト管理', $active, '');
-        echo '<div class="nav-section-label">サイト別機能</div>';
-
-        foreach ($groups as $groupKey => $group) {
-            $open = $activeGroup === $groupKey;
-            echo '<div class="nav-group' . ($open ? ' is-open' : '') . '" data-nav-group>';
-            echo '<button type="button" class="nav-parent" data-nav-toggle aria-expanded="' . ($open ? 'true' : 'false') . '"><span class="nav-parent-label">' . e($group['label']) . '</span><span class="nav-chevron" aria-hidden="true">⌄</span></button>';
-            echo '<div class="nav-children">';
-            foreach ($group['items'] as $page => $label) {
-                $global = in_array($page, ['management_links','data','settings'], true);
-                echo self::menuLink($page, $label, $active, $global ? '' : $siteQuery, true);
-            }
-            echo '</div></div>';
+        echo '<aside class="sidebar asyura-sidebar" data-sidebar><div class="sidebar-head"><div class="sidebar-title"><strong>管理メニュー</strong>';
+        if ($currentSite) {
+            echo '<small>' . e($currentSite['name']) . '</small>';
+        } else {
+            echo '<small>サイトを選択してください</small>';
         }
-        echo '</nav></aside><main class="content">';
+        echo '</div><button type="button" class="sidebar-close" data-mobile-menu-close aria-label="メニューを閉じる">×</button></div><nav class="admin-nav asyura-nav">';
 
-        if ($isSitePage) {
-            echo '<details class="site-context-card">';
-            echo '<summary>';
-            echo '<span class="site-context-main"><span class="site-context-kicker">対象サイト</span><span class="site-context-name">' . ($currentSite ? e($currentSite['name']) : '管理サイトがありません') . '</span>';
-            if ($currentSite) {
-                echo '<span class="site-context-url">' . e($currentSite['url']) . '</span>';
-            }
-            echo '</span>';
-            echo '<span class="site-context-status-wrap">';
-            if ($currentSite) {
-                echo '<span class="site-context-status ' . (!empty($currentSite['active']) ? 'is-active' : '') . '"><span class="status-dot"></span>' . (!empty($currentSite['active']) ? '計測中' : '計測停止') . '</span>';
-            }
-            echo '<span class="site-context-toggle"><span class="desktop-label">切替・詳細</span><span class="mobile-label">詳細</span><span class="site-context-chevron">⌄</span></span></span></summary>';
-            echo '<div class="site-context-body">';
-            if ($currentSite) {
-                echo '<div class="site-context-info"><div class="site-info-row"><span>サイト名</span><strong>' . e($currentSite['name']) . '</strong></div><div class="site-info-row"><span>URL</span><a href="' . e($currentSite['url']) . '" target="_blank" rel="noopener noreferrer">' . e($currentSite['url']) . '</a></div><div class="site-info-row"><span>site_id</span><strong>' . $siteId . '</strong></div></div>';
-            } else {
-                echo '<div class="site-context-info"><strong>管理サイトがありません</strong><span>最初にサイトを登録してください。</span></div>';
-            }
-            echo '<div class="site-context-actions">';
-            if ($sites !== []) {
-                echo '<form method="get" class="site-switcher"><input type="hidden" name="page" value="' . e($active) . '"><label for="site-switch">対象サイトを切り替える</label><select id="site-switch" name="site" onchange="this.form.submit()">';
-                foreach ($sites as $site) {
-                    echo '<option value="' . (int) $site['id'] . '"' . ((int) $site['id'] === $siteId ? ' selected' : '') . '>' . e($site['name']) . '</option>';
+        echo self::rootLink('dashboard', 'ダッシュボード', $active, $siteQuery, 'nav-dashboard');
+
+        // Site is not selected: only Dashboard + Site registration.
+        if ($currentSite === null) {
+            echo '<a class="nav-root nav-register' . ($active === 'sites' ? ' active' : '') . '" href="' . e(app_url('admin/?page=sites&new=1')) . '"><span>サイト登録</span></a>';
+        } else {
+            foreach ($groups as $key => $group) {
+                $open = in_array($active, $group['pages'], true);
+                echo '<div class="nav-group ' . e($group['class']) . ($open ? ' is-open' : '') . '" data-nav-group>';
+                echo '<button type="button" class="nav-parent" data-nav-toggle aria-expanded="' . ($open ? 'true' : 'false') . '"><span class="nav-parent-label">' . e($group['label']) . '</span><span class="nav-chevron">⌄</span></button>';
+                echo '<div class="nav-children">';
+                foreach ($group['items'] as [$page, $label, $itemView]) {
+                    $isActive = $page === $active && ($itemView === '' || $view === $itemView || ($view === '' && $itemView === 'list'));
+                    $query = in_array($page, ['management_links','data','settings'], true) ? '' : $siteQuery;
+                    if ($itemView !== '') {
+                        $query .= '&view=' . rawurlencode($itemView);
+                    }
+                    echo '<a class="nav-child' . ($isActive ? ' active' : '') . '" href="' . e(app_url('admin/?page=' . $page . $query)) . '"><span>' . e($label) . '</span></a>';
                 }
-                echo '</select></form>';
-                if ($currentSite) {
-                    echo '<div class="site-context-buttons"><a class="button" href="' . e(app_url('admin/?page=sites&edit=' . $siteId)) . '">サイト設定</a><a class="button" href="' . e($currentSite['url']) . '" target="_blank" rel="noopener noreferrer">公開サイトを開く</a></div>';
-                }
-            } else {
-                echo '<a class="button primary" href="' . e(app_url('admin/?page=sites&new=1')) . '">最初のサイトを登録</a>';
+                echo '</div></div>';
             }
-            echo '</div></div></details>';
+            echo '<a class="nav-root nav-logout" href="' . e(app_url('logout.php')) . '"><span>ログアウト</span></a>';
+        }
+        echo '</nav></aside><main class="content asyura-content">';
+
+        if ($currentSite) {
+            echo '<div class="current-site-strip"><span>管理中</span><strong>' . e($currentSite['name']) . '</strong><a href="' . e($currentSite['url']) . '" target="_blank" rel="noopener noreferrer">' . e($currentSite['url']) . '</a><span class="current-site-state ' . (!empty($currentSite['active']) ? 'is-active' : '') . '">' . (!empty($currentSite['active']) ? '計測中' : '停止') . '</span></div>';
         }
 
-        echo '<div class="page-heading"><div><span class="eyebrow">' . (in_array($active, ['sites','management_links','data','settings'], true) ? '阿修羅 全体管理' : 'サイト別管理') . '</span><h1 class="page-title">' . e($displayTitle) . '</h1></div></div>';
+        echo '<div class="page-heading"><div><span class="eyebrow">' . ($currentSite ? 'サイト別管理' : 'サイト管理') . '</span><h1 class="page-title">' . e($displayTitle) . '</h1></div></div>';
 
         if (!empty($_SESSION['flash'])) {
             echo '<div class="notice ' . e($_SESSION['flash']['type'] ?? 'success') . '">' . e($_SESSION['flash']['message']) . '</div>';
@@ -129,9 +134,9 @@ final class View
         }
     }
 
-    private static function menuLink(string $page, string $label, string $active, string $siteQuery = '', bool $child = false): string
+    private static function rootLink(string $page, string $label, string $active, string $siteQuery, string $class = ''): string
     {
-        return '<a class="menu-' . e($page) . ' ' . ($child ? 'nav-child ' : 'nav-root ') . ($page === $active ? 'active' : '') . '" href="' . e(app_url('admin/?page=' . $page . $siteQuery)) . '"><span>' . e($label) . '</span></a>';
+        return '<a class="nav-root ' . e($class) . ($page === $active ? ' active' : '') . '" href="' . e(app_url('admin/?page=' . $page . $siteQuery)) . '"><span>' . e($label) . '</span></a>';
     }
 
     public static function footer(): void
