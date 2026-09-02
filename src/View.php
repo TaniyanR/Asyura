@@ -14,8 +14,6 @@ final class View
         $sitePages = ['dashboard','analytics','ranking','links','requests','rss','rotation','notices','urls'];
         $isSitePage = in_array($active, $sitePages, true);
         $displayTitle = $isSitePage && $currentSite ? $title . '｜' . (string) $currentSite['name'] : $title;
-        $morePages = ['urls','management_links','data','settings'];
-        $moreOpen = in_array($active, $morePages, true);
 
         echo '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex"><title>' . e($displayTitle) . ' ‹ 阿修羅</title><link rel="stylesheet" href="' . e(app_url('assets/admin.css')) . '"></head><body>';
 
@@ -29,22 +27,23 @@ final class View
         echo '<aside class="sidebar" data-sidebar>';
         echo '<div class="sidebar-head"><a class="sidebar-brand" href="' . e(app_url('admin/?page=dashboard' . $siteQuery)) . '"><span class="logo-mark">阿</span><span><strong>阿修羅</strong><small>管理画面</small></span></a><button type="button" class="sidebar-close" data-mobile-menu-close aria-label="メニューを閉じる">×</button></div>';
         echo '<nav class="admin-nav">';
+        echo '<span class="nav-section-title">基本</span>';
         echo self::menuLink('dashboard', 'ダッシュボード', $active, $siteQuery);
         echo self::menuLink('sites', 'サイト管理', $active, '');
-        echo '<div class="nav-divider"></div>';
+        echo '<span class="nav-section-title">アクセス</span>';
         echo self::menuLink('analytics', 'アクセス解析', $active, $siteQuery);
         echo self::menuLink('ranking', '逆アクセスランキング', $active, $siteQuery);
+        echo '<span class="nav-section-title">連携</span>';
         echo self::menuLink('links', '相互リンク', $active, $siteQuery, in_array($active, ['links','requests'], true));
         echo self::menuLink('rss', '相互RSS', $active, $siteQuery);
+        echo '<span class="nav-section-title">運用</span>';
         echo self::menuLink('rotation', '過去記事', $active, $siteQuery);
         echo self::menuLink('notices', 'お知らせ', $active, $siteQuery);
-        echo '<div class="nav-divider"></div>';
-        echo '<div class="nav-more' . ($moreOpen ? ' is-open' : '') . '" data-nav-group><button type="button" class="nav-more-button" data-nav-toggle aria-expanded="' . ($moreOpen ? 'true' : 'false') . '"><span>その他</span><span class="nav-chevron">⌄</span></button><div class="nav-more-items">';
-        echo self::menuLink('urls', 'URL統一・除外', $active, $siteQuery, false, true);
-        echo self::menuLink('management_links', '管理リンク', $active, '', false, true);
-        echo self::menuLink('data', 'データ管理', $active, '', false, true);
-        echo self::menuLink('settings', '設定', $active, '', false, true);
-        echo '</div></div>';
+        echo '<span class="nav-section-title">システム</span>';
+        echo self::menuLink('urls', 'URL統一・除外', $active, $siteQuery);
+        echo self::menuLink('management_links', '管理リンク', $active, '');
+        echo self::menuLink('data', 'データ管理', $active, '');
+        echo self::menuLink('settings', '設定', $active, '');
         echo '<a class="nav-logout" href="' . e(app_url('logout.php')) . '">ログアウト</a>';
         echo '</nav></aside>';
 
@@ -64,7 +63,7 @@ final class View
                 }
                 echo '</select></form>';
                 if ($currentSite) {
-                    echo '<a class="site-switch-link" href="' . e(app_url('admin/?page=sites&edit=' . $siteId)) . '">サイト設定</a>';
+                    echo '<a class="site-switch-link" href="' . e(app_url('admin/?page=sites&edit=' . $siteId)) . '">設定</a>';
                 }
             } else {
                 echo '<a class="button primary" href="' . e(app_url('admin/?page=sites&new=1')) . '">サイトを登録</a>';
@@ -89,10 +88,10 @@ final class View
         }
     }
 
-    private static function menuLink(string $page, string $label, string $active, string $siteQuery = '', bool $forceActive = false, bool $small = false): string
+    private static function menuLink(string $page, string $label, string $active, string $siteQuery = '', bool $forceActive = false): string
     {
         $isActive = $forceActive || $page === $active;
-        return '<a class="nav-link' . ($small ? ' is-small' : '') . ($isActive ? ' active' : '') . '" href="' . e(app_url('admin/?page=' . $page . $siteQuery)) . '"><span class="nav-dot"></span><span>' . e($label) . '</span></a>';
+        return '<a class="nav-link' . ($isActive ? ' active' : '') . '" href="' . e(app_url('admin/?page=' . $page . $siteQuery)) . '"><span>' . e($label) . '</span></a>';
     }
 
     private static function tabLink(string $page, string $label, string $active, string $siteQuery): string
