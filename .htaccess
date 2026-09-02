@@ -7,6 +7,11 @@ RewriteRule ^sitemap\.xml$ public/sitemap.php [L,QSA]
 RewriteRule ^feed/([a-zA-Z0-9]+)/category/([^/]+)/([a-z0-9-]+)/?$ feed/random.php?site=$1&category=$2&slug=$3 [L,QSA]
 RewriteRule ^feed/([a-zA-Z0-9]+)/([a-z0-9-]+)/?$ feed/random.php?site=$1&slug=$2 [L,QSA]
 
+# 存在しないURLは管理ログイン画面へ戻す
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ login.php [R=302,L]
+
 <FilesMatch "^(?:\.env|composer\.(?:json|lock)|phpunit\.xml)$">
     Require all denied
 </FilesMatch>
