@@ -59,14 +59,14 @@ View::header($titles[$page], $page, $asyuraSites, $asyuraCurrentSite);
 if ($page === 'dashboard' && $asyuraCurrentSite === null) {
     echo '<section class="global-dashboard">';
     if ($asyuraSites === []) {
-        echo '<div class="empty-state"><strong>まだサイトが登録されていません。</strong><p>最初にサイトを登録してください。</p><a class="button primary" href="' . e(app_url('admin/?page=sites&new=1')) . '">サイト登録</a></div>';
+        echo '<div class="empty-state"><strong>まだサイトが登録されていません。</strong><p>サイドメニューまたはヘッダーからサイトを登録してください。</p></div>';
     } else {
         $today = date('Y-m-d');
         $stmt = $db->prepare('SELECT s.id,s.name,s.url,COALESCE(d.pv,0) pv,COALESCE(d.uu,0) uu FROM sites s LEFT JOIN daily_stats d ON d.site_id=s.id AND d.stat_date=? ORDER BY s.id');
         $stmt->execute([$today]);
         $summaries = $stmt->fetchAll();
 
-        echo '<div class="dashboard-summary-head"><div><h2>各サイトの今日のアクセス</h2><p>' . e($today) . ' の簡易表示です。</p></div><a class="button primary" href="' . e(app_url('admin/?page=sites&new=1')) . '">サイト登録</a></div>';
+        echo '<div class="dashboard-summary-head"><div><h2>各サイトの今日のアクセス</h2><p>' . e($today) . ' の簡易表示です。</p></div></div>';
         echo '<div class="site-access-grid">';
         foreach ($summaries as $row) {
             echo '<a class="site-access-card" href="' . e(app_url('admin/?page=dashboard&site=' . (int) $row['id'])) . '">';
@@ -78,6 +78,31 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
         echo '</div>';
     }
     echo '</section>';
+} elseif ($page === 'dashboard' && $asyuraCurrentSite !== null) {
+    $siteId = (int) $asyuraCurrentSite['id'];
+
+    echo '<div class="panel"><h2>直近14日間のアクセス</h2><div class="panel-body">';
+    $rowStmt = $db->prepare("SELECT stat_date,pv FROM daily_stats WHERE site_id=? AND stat_date>=CURDATE()-INTERVAL 13 DAY ORDER BY stat_date");
+    $rowStmt->execute([$siteId]);
+    $rows = $rowStmt->fetchAll();
+    $max = max(1, ...array_map(static fn($r)=>(int)$r['pv'], $rows ?: [['pv'=>1]]));
+    if (!$rows) {
+        echo '<div class="empty">まだアクセスデータがありません。</div>';
+    } else {
+        echo '<div class="chart-bars">';
+        foreach ($rows as $r) {
+            echo '<span title="' . e($r['stat_date'] . '：' . $r['pv'] . ' PV') . '" style="height:' . max(3, round(((int) $r['pv'] / $max) * 100)) . '%"></span>';
+        }
+        echo '</div>';
+    }
+    echo '</div></div>';
+
+    $errorStmt = $db->prepare("SELECT COUNT(*) FROM rss_feeds WHERE site_id=? AND active=1 AND last_error IS NOT NULL");
+    $errorStmt->execute([$siteId]);
+    $feedErrors = (int) $errorStmt->fetchColumn();
+    echo '<div class="cards compact"><div class="card ' . ($feedErrors ? 'orange' : 'green') . '"><div class="number">' . $feedErrors . '</div><div class="label">このサイトのRSS取得エラー</div></div></div>';
+
+    echo '<div class="panel"><h2>設定状況</h2><div class="panel-body"><p>cron URL：<code>' . e(app_url('cron/run.php?key=' . $config['cron_key'])) . '</code></p><p class="description">30分ごとにcronを実行してください。CLIからは <code>php ' . e(ASYURA_ROOT . '/cron/run.php') . '</code> でも実行できます。</p></div></div>';
 } elseif ($page === 'tracking') {
     require __DIR__ . '/tracking-tag.php';
 } else {
