@@ -15,7 +15,7 @@ if ($page === 'sites') {
     exit;
 }
 
-$asyuraSites = $db->query('SELECT * FROM sites ORDER BY name,id')->fetchAll();
+$asyuraSites = $db->query('SELECT * FROM sites ORDER BY id')->fetchAll();
 $requestedSiteId = (int) ($_GET['site'] ?? $_POST['context_site_id'] ?? 0);
 $asyuraCurrentSite = null;
 if ($requestedSiteId > 0) {
@@ -57,12 +57,25 @@ $titles = [
 View::header($titles[$page], $page, $asyuraSites, $asyuraCurrentSite);
 
 if ($page === 'dashboard' && $asyuraCurrentSite === null) {
-    echo '<section class="site-pick-page">';
-    echo '<div class="site-pick-hero"><div><h1>ダッシュボード</h1><p>ヘッダーの「サイト登録」から、登録または管理するサイトを選択してください。</p></div><a class="button primary" href="' . e(app_url('admin/?page=sites&new=1')) . '">サイト登録</a></div>';
+    echo '<section class="global-dashboard">';
     if ($asyuraSites === []) {
         echo '<div class="empty-state"><strong>まだサイトが登録されていません。</strong><p>最初にサイトを登録してください。</p><a class="button primary" href="' . e(app_url('admin/?page=sites&new=1')) . '">サイト登録</a></div>';
     } else {
-        echo '<div class="panel"><h2>登録済みサイト</h2><div class="panel-body"><p class="description">管理するサイトはヘッダーのサイト名メニューから選択できます。</p></div></div>';
+        $today = date('Y-m-d');
+        $stmt = $db->prepare('SELECT s.id,s.name,s.url,COALESCE(d.pv,0) pv,COALESCE(d.uu,0) uu FROM sites s LEFT JOIN daily_stats d ON d.site_id=s.id AND d.stat_date=? ORDER BY s.id');
+        $stmt->execute([$today]);
+        $summaries = $stmt->fetchAll();
+
+        echo '<div class="dashboard-summary-head"><div><h2>各サイトの今日のアクセス</h2><p>' . e($today) . ' の簡易表示です。</p></div><a class="button primary" href="' . e(app_url('admin/?page=sites&new=1')) . '">サイト登録</a></div>';
+        echo '<div class="site-access-grid">';
+        foreach ($summaries as $row) {
+            echo '<a class="site-access-card" href="' . e(app_url('admin/?page=dashboard&site=' . (int) $row['id'])) . '">';
+            echo '<div class="site-access-name"><strong>' . e($row['name']) . '</strong><small>' . e($row['url']) . '</small></div>';
+            echo '<div class="site-access-numbers"><span><small>今日のPV</small><b>' . number_format((int) $row['pv']) . '</b></span><span><small>今日のUU</small><b>' . number_format((int) $row['uu']) . '</b></span></div>';
+            echo '<div class="site-access-open">このサイトを管理 →</div>';
+            echo '</a>';
+        }
+        echo '</div>';
     }
     echo '</section>';
 } elseif ($page === 'tracking') {
