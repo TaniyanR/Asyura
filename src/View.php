@@ -15,8 +15,8 @@ final class View
         $view = (string) ($_GET['view'] ?? '');
 
         $groups = [
-            ['label'=>'アクセス','mark'=>'●','class'=>'nav-access','pages'=>['analytics','ranking','urls'],'items'=>[
-                ['analytics','アクセス解析',''],['ranking','逆アクセスランキング',''],['urls','URL統一・除外',''],
+            ['label'=>'アクセス','mark'=>'●','class'=>'nav-access','pages'=>['analytics','ranking','urls','tracking'],'items'=>[
+                ['analytics','アクセス解析',''],['ranking','逆アクセスランキング',''],['urls','URL統一・除外',''],['tracking','計測タグ',''],
             ]],
             ['label'=>'相互リンク','mark'=>'↔','class'=>'nav-links','pages'=>['links','requests'],'items'=>[
                 ['requests','申請一覧',''],['links','登録済みリンク','list'],['links','新規登録','new'],
