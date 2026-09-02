@@ -30,7 +30,7 @@ if ($requestedSiteId > 0) {
 (new AdminController($db, $config))->handle();
 require __DIR__ . '/pages.php';
 
-$allowed = ['dashboard','analytics','ranking','links','requests','rss','rotation','notices','urls','management_links','data','settings'];
+$allowed = ['dashboard','analytics','ranking','urls','tracking','links','requests','rss','rotation','notices','management_links','data','settings'];
 if (!in_array($page, $allowed, true)) {
     $page = 'dashboard';
 }
@@ -42,12 +42,13 @@ $titles = [
     'dashboard'=>'ダッシュボード',
     'analytics'=>'アクセス解析',
     'ranking'=>'逆アクセスランキング',
+    'urls'=>'URL統一・除外',
+    'tracking'=>'計測タグ',
     'links'=>'相互リンク',
     'requests'=>'申請一覧',
     'rss'=>'相互RSS',
     'rotation'=>'過去記事再配信',
     'notices'=>'お知らせ',
-    'urls'=>'URL統一・除外',
     'management_links'=>'管理リンク',
     'data'=>'データ管理',
     'settings'=>'設定',
@@ -64,6 +65,8 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
         echo '<div class="panel"><h2>登録済みサイト</h2><div class="panel-body"><p class="description">管理するサイトはヘッダーのサイト名メニューから選択できます。</p></div></div>';
     }
     echo '</section>';
+} elseif ($page === 'tracking') {
+    require __DIR__ . '/tracking-tag.php';
 } else {
     call_user_func('asyura_page_' . $page, $db, $config);
 }
