@@ -11,30 +11,17 @@ Auth::requireLogin($config['app_url']);
 
 $asyuraSites = $db->query('SELECT * FROM sites ORDER BY name,id')->fetchAll();
 
-if (isset($_GET['clear_site'])) {
-    unset($_SESSION['admin_site_id']);
-}
-
+// トップページとサイト専用ページを明確に分離する。
+// サイトはURLの site またはPOSTの context_site_id で明示された場合だけ確定する。
 $requestedSiteId = (int) ($_GET['site'] ?? $_POST['context_site_id'] ?? 0);
+$asyuraCurrentSite = null;
 if ($requestedSiteId > 0) {
     foreach ($asyuraSites as $candidate) {
         if ((int) $candidate['id'] === $requestedSiteId) {
-            $_SESSION['admin_site_id'] = $requestedSiteId;
+            $asyuraCurrentSite = $candidate;
             break;
         }
     }
-}
-
-$currentSiteId = (int) ($_SESSION['admin_site_id'] ?? 0);
-$asyuraCurrentSite = null;
-foreach ($asyuraSites as $candidate) {
-    if ((int) $candidate['id'] === $currentSiteId) {
-        $asyuraCurrentSite = $candidate;
-        break;
-    }
-}
-if ($asyuraCurrentSite === null && $currentSiteId > 0) {
-    unset($_SESSION['admin_site_id']);
 }
 
 (new AdminController($db, $config))->handle();
@@ -47,7 +34,7 @@ if (!in_array($page, $allowed, true)) {
     $page = 'dashboard';
 }
 
-// サイトが未確定の間は、ダッシュボードとサイト登録以外へ入らない。
+// サイト未確定のトップ側では、ダッシュボードとサイト登録だけを許可する。
 if ($asyuraCurrentSite === null && !in_array($page, ['dashboard','sites'], true)) {
     $page = 'dashboard';
 }
@@ -72,17 +59,11 @@ View::header($titles[$page], $page, $asyuraSites, $asyuraCurrentSite);
 
 if ($page === 'dashboard' && $asyuraCurrentSite === null) {
     echo '<section class="site-pick-page">';
-    echo '<div class="site-pick-hero"><div><span class="eyebrow">SITE SELECT</span><h1>管理するサイトを選択</h1><p>ヘッダーのサイトメニュー、または下の一覧から管理するサイトを選んでください。</p></div><a class="button primary" href="' . e(app_url('admin/?page=sites&new=1')) . '">サイト登録</a></div>';
+    echo '<div class="site-pick-hero"><div><span class="eyebrow">ASYURA</span><h1>ダッシュボード</h1><p>ヘッダーの「サイト登録」から、登録または管理するサイトを選択してください。</p></div><a class="button primary" href="' . e(app_url('admin/?page=sites&new=1')) . '">サイト登録</a></div>';
     if ($asyuraSites === []) {
         echo '<div class="empty-state"><strong>まだサイトが登録されていません。</strong><p>最初にサイトを登録してください。</p><a class="button primary" href="' . e(app_url('admin/?page=sites&new=1')) . '">サイト登録</a></div>';
     } else {
-        echo '<div class="site-pick-grid">';
-        foreach ($asyuraSites as $site) {
-            echo '<a class="site-pick-card" href="' . e(app_url('admin/?page=dashboard&site=' . (int) $site['id'])) . '">';
-            echo '<span class="site-pick-state ' . (!empty($site['active']) ? 'is-active' : '') . '">' . (!empty($site['active']) ? '計測中' : '停止') . '</span>';
-            echo '<strong>' . e($site['name']) . '</strong><span>' . e($site['url']) . '</span><b>このサイトを管理する →</b></a>';
-        }
-        echo '</div>';
+        echo '<div class="panel"><h2>登録済みサイト</h2><div class="panel-body"><p class="description">管理するサイトはヘッダーのサイト名メニューから選択できます。</p></div></div>';
     }
     echo '</section>';
 } else {
