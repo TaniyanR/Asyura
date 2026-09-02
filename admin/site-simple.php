@@ -1,13 +1,9 @@
 <?php
 declare(strict_types=1);
 
-use Asyura\Auth;
 use Asyura\Security;
 use Asyura\SimpleSiteService;
 use Asyura\View;
-
-require dirname(__DIR__) . '/src/bootstrap.php';
-Auth::requireLogin($config['app_url']);
 
 $service = new SimpleSiteService($db);
 $service->ensureSchema();
