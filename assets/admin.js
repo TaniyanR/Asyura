@@ -18,6 +18,16 @@ document.addEventListener('click',function(e){
 });
 
 (function(){
+    var siteMenu=document.querySelector('[data-site-menu]');
+    var siteToggle=document.querySelector('[data-site-menu-toggle]');
+    if(!siteMenu||!siteToggle)return;
+    function closeSiteMenu(){siteMenu.classList.remove('is-open');siteToggle.setAttribute('aria-expanded','false')}
+    siteToggle.addEventListener('click',function(e){e.stopPropagation();var open=!siteMenu.classList.contains('is-open');siteMenu.classList.toggle('is-open',open);siteToggle.setAttribute('aria-expanded',open?'true':'false')});
+    document.addEventListener('click',function(e){if(!siteMenu.contains(e.target))closeSiteMenu()});
+    document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSiteMenu()});
+})();
+
+(function(){
     var sidebar=document.querySelector('[data-sidebar]');
     var overlay=document.querySelector('[data-sidebar-overlay]');
     var menuButton=document.querySelector('[data-mobile-menu-toggle]');
@@ -39,16 +49,10 @@ document.addEventListener('click',function(e){
         menuButton.setAttribute('aria-label','メニューを開く');
     }
 
-    menuButton.addEventListener('click',function(){
-        if(sidebar.classList.contains('is-open'))closeMenu();else openMenu();
-    });
+    menuButton.addEventListener('click',function(){sidebar.classList.contains('is-open')?closeMenu():openMenu()});
     if(closeButton)closeButton.addEventListener('click',closeMenu);
     if(overlay)overlay.addEventListener('click',closeMenu);
     document.addEventListener('keydown',function(e){if(e.key==='Escape')closeMenu()});
-    sidebar.addEventListener('click',function(e){
-        if(window.matchMedia('(max-width:860px)').matches&&e.target.closest('a'))closeMenu();
-    });
-    window.addEventListener('resize',function(){
-        if(!window.matchMedia('(max-width:860px)').matches)closeMenu();
-    });
+    sidebar.addEventListener('click',function(e){if(window.matchMedia('(max-width:900px)').matches&&e.target.closest('a'))closeMenu()});
+    window.addEventListener('resize',function(){if(!window.matchMedia('(max-width:900px)').matches)closeMenu()});
 })();
