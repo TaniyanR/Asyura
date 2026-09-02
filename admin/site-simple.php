@@ -1,0 +1,79 @@
+<?php
+declare(strict_types=1);
+
+use Asyura\Auth;
+use Asyura\Security;
+use Asyura\SimpleSiteService;
+use Asyura\View;
+
+require dirname(__DIR__) . '/src/bootstrap.php';
+Auth::requireLogin($config['app_url']);
+
+$service = new SimpleSiteService($db);
+$service->ensureSchema();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!Security::verifyCsrf($_POST['csrf_token'] ?? null)) {
+        View::flash('画面の有効期限が切れました。もう一度お試しください。', 'error');
+    } else {
+        try {
+            if (($_POST['action'] ?? '') === 'delete_site_simple') {
+                if (($_POST['confirm_delete'] ?? '') !== 'yes') {
+                    throw new InvalidArgumentException('削除確認で「はい」を選択してください。');
+                }
+                $service->delete((int) ($_POST['id'] ?? 0));
+                View::flash('サイトを削除しました。');
+                redirect(app_url('admin/?page=sites'));
+            }
+            $id = $service->save($_POST);
+            View::flash('サイト情報を保存しました。');
+            redirect(app_url('admin/?page=sites&edit=' . $id));
+        } catch (Throwable $e) {
+            View::flash($e instanceof InvalidArgumentException ? $e->getMessage() : '保存中にエラーが発生しました。', 'error');
+        }
+    }
+}
+
+$sites = $db->query('SELECT * FROM sites ORDER BY name,id')->fetchAll();
+$editId = (int) ($_GET['edit'] ?? 0);
+$site = null;
+if ($editId > 0) {
+    $stmt = $db->prepare('SELECT * FROM sites WHERE id=?');
+    $stmt->execute([$editId]);
+    $site = $stmt->fetch() ?: null;
+}
+
+View::header('サイト登録', 'sites', $sites, null);
+
+if (isset($_GET['new']) || $site !== null) {
+    $site = $site ?: ['id'=>0,'name'=>'','url'=>'','rss_url'=>'','login_url'=>'','admin_email'=>'','description'=>''];
+    echo '<div class="simple-site-form panel"><h2>基本情報</h2><div class="panel-body">';
+    echo '<form method="post">' . csrf_field() . '<input type="hidden" name="id" value="' . (int) $site['id'] . '">';
+    echo '<div class="form-grid">';
+    echo '<label>サイト名<input name="name" value="' . e($site['name']) . '" required></label>';
+    echo '<label>サイトURL<input type="url" name="url" value="' . e($site['url']) . '" placeholder="https://example.com/" required></label>';
+    echo '<label>サイトRSS<input type="url" name="rss_url" value="' . e($site['rss_url'] ?? '') . '" placeholder="https://example.com/feed/"></label>';
+    echo '<label>ログインURL<input type="url" name="login_url" value="' . e($site['login_url'] ?? '') . '" placeholder="https://example.com/admin/"></label>';
+    echo '<label class="span-2">管理メールアドレス<input type="email" name="admin_email" value="' . e($site['admin_email'] ?? '') . '"></label>';
+    echo '<label class="span-2">説明<textarea name="description" rows="6">' . e($site['description'] ?? '') . '</textarea></label>';
+    echo '</div><div class="actions"><button class="button primary" type="submit">保存</button><a class="button" href="' . e(app_url('admin/?page=sites')) . '">戻る</a></div></form>';
+    echo '</div></div>';
+
+    if ((int) $site['id'] > 0) {
+        $tag = '<script src="' . app_url('assets/tracker.js') . '" data-site-id="' . $site['public_id'] . '" data-site-key="' . $site['site_key'] . '" async></script>';
+        echo '<div class="panel"><h2>計測タグ</h2><div class="panel-body"><p>登録サイトの全ページに設置してください。</p><pre id="tracking-tag" class="codebox">' . e($tag) . '</pre><button type="button" class="button" data-copy="#tracking-tag">コピー</button></div></div>';
+        echo '<div class="danger-zone"><h2>サイトを完全削除</h2><p>関連データも削除され、元に戻せません。</p><form method="post" data-confirm="本当にサイトを削除しますか？">' . csrf_field() . '<input type="hidden" name="action" value="delete_site_simple"><input type="hidden" name="id" value="' . (int) $site['id'] . '"><label><input type="radio" name="confirm_delete" value="no" checked>いいえ</label><label><input type="radio" name="confirm_delete" value="yes">はい</label><button class="button danger" type="submit">削除</button></form></div>';
+    }
+} else {
+    echo '<div class="section-intro"><div><h2>登録サイト</h2><p>阿修羅で管理する自分のサイトを登録します。</p></div><a class="button primary" href="' . e(app_url('admin/?page=sites&new=1')) . '">サイト登録</a></div>';
+    echo '<div class="table-wrap"><table class="wp-list"><thead><tr><th>サイト名</th><th>サイトURL</th><th>サイトRSS</th><th>操作</th></tr></thead><tbody>';
+    foreach ($sites as $row) {
+        echo '<tr><td><strong>' . e($row['name']) . '</strong></td><td><a href="' . e($row['url']) . '" target="_blank" rel="noopener noreferrer">' . e($row['url']) . '</a></td><td>' . e($row['rss_url'] ?? '') . '</td><td><a class="button" href="' . e(app_url('admin/?page=sites&edit=' . (int) $row['id'])) . '">編集</a> <a class="button primary" href="' . e(app_url('admin/?page=dashboard&site=' . (int) $row['id'])) . '">管理</a></td></tr>';
+    }
+    if ($sites === []) {
+        echo '<tr><td colspan="4" class="empty">サイトが登録されていません。</td></tr>';
+    }
+    echo '</tbody></table></div>';
+}
+
+View::footer();
