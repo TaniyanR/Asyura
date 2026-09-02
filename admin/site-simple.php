@@ -56,8 +56,6 @@ if (isset($_GET['new']) || $site !== null) {
     echo '</div></div>';
 
     if ((int) $site['id'] > 0) {
-        $tag = '<script src="' . app_url('assets/tracker.js') . '" data-site-id="' . $site['public_id'] . '" data-site-key="' . $site['site_key'] . '" async></script>';
-        echo '<div class="panel"><h2>計測タグ</h2><div class="panel-body"><p>登録サイトの全ページに設置してください。</p><pre id="tracking-tag" class="codebox">' . e($tag) . '</pre><button type="button" class="button" data-copy="#tracking-tag">コピー</button></div></div>';
         echo '<div class="danger-zone"><h2>サイトを完全削除</h2><p>関連データも削除され、元に戻せません。</p><form method="post" data-confirm="本当にサイトを削除しますか？">' . csrf_field() . '<input type="hidden" name="action" value="delete_site_simple"><input type="hidden" name="id" value="' . (int) $site['id'] . '"><label><input type="radio" name="confirm_delete" value="no" checked>いいえ</label><label><input type="radio" name="confirm_delete" value="yes">はい</label><button class="button danger" type="submit">削除</button></form></div>';
     }
 } else {
