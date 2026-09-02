@@ -1,0 +1,26 @@
+:root{--sidebar:232px}
+.sidebar{background:#fff;border-right:1px solid #dfe3e8;box-shadow:4px 0 18px rgba(31,37,43,.06)}
+.sidebar-head{padding:18px 16px 14px;border-bottom:1px solid #edf0f2}
+.sidebar-brand{color:#20252a!important}
+.sidebar-brand strong{font-size:19px;color:#20252a}
+.sidebar-brand small{color:#7a858e}
+.logo-mark{background:#2271b1;box-shadow:none}
+.admin-nav{padding:10px 12px 24px}
+.nav-section-title{display:block;margin:15px 10px 6px;color:#8a949d;font-size:10px;font-weight:800;letter-spacing:.12em}
+.nav-section-title:first-child{margin-top:3px}
+.nav-link,.nav-logout{display:flex;align-items:center;width:100%;min-height:42px;margin:2px 0;padding:9px 12px;border-radius:7px;color:#37414a;font-size:14px;font-weight:600;text-decoration:none}
+.nav-link:hover{background:#f2f6f9;color:#135e96;text-decoration:none}
+.nav-link.active{background:#eaf3fa;color:#135e96;font-weight:800;box-shadow:inset 3px 0 0 #2271b1}
+.nav-logout{margin-top:16px;border-top:1px solid #edf0f2;border-radius:0;color:#b32d2e;padding-top:14px}
+.nav-logout:hover{background:#fff2f2;color:#8f1d1e;text-decoration:none}
+.sidebar-close{color:#303942}
+.content{margin-left:var(--sidebar)}
+.site-switch-bar{min-height:56px;margin-bottom:14px;padding:8px 12px;border-radius:7px;box-shadow:none}
+.site-switch-current{gap:8px}
+.site-switch-label{font-size:11px}
+.site-switch-current strong{font-size:14px}
+.site-switch-form select{min-width:190px;padding-top:6px;padding-bottom:6px}
+.site-switch-link{display:inline-flex;align-items:center;min-height:34px;padding:5px 10px;border:1px solid #d8dde2;border-radius:5px;background:#fff;color:#2271b1}
+.page-heading{margin-bottom:14px}
+@media(max-width:860px){.sidebar{background:#fff}.sidebar-brand{color:#20252a!important}.sidebar-close{color:#20252a}.nav-link,.nav-logout{min-height:48px;font-size:15px}.nav-section-title{margin-top:17px}.content{margin-left:0}}
+@media(max-width:640px){.site-switch-bar{padding:9px}.site-switch-current{align-items:center}.site-switch-current strong{font-size:15px}.site-switch-form select{min-height:42px}.site-switch-link{min-height:42px}.page-heading{margin-top:2px}}
