@@ -35,14 +35,14 @@ final class View
         echo '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex"><title>' . e($displayTitle) . ' ‹ 阿修羅</title><link rel="stylesheet" href="' . e(app_url('assets/admin.css')) . '"><link rel="stylesheet" href="' . e(app_url('assets/admin-refined.css')) . '"><link rel="stylesheet" href="' . e(app_url('assets/admin-site-layout.css')) . '"></head><body>';
 
         echo '<header class="topbar asyura-topbar">';
-        echo '<button type="button" class="mobile-menu-button" data-mobile-menu-toggle aria-label="メニューを開く" aria-expanded="false"><span></span><span></span><span></span></button>';
+        echo '<button type="button" class="mobile-menu-button" data-mobile-menu-toggle aria-label="メニューを開く" aria-expanded="false">☰</button>';
         echo '<a class="topbar-brand asyura-brand" href="' . e(app_url('admin/?page=dashboard')) . '">阿修羅</a>';
         echo '<div class="header-site-menu" data-site-menu>';
         echo '<button type="button" class="header-site-trigger" data-site-menu-toggle aria-expanded="false"><span class="site-trigger-label">' . ($currentSite ? e($currentSite['name']) : 'サイト登録') . '</span><span class="site-trigger-arrow">▼</span></button>';
         echo '<div class="header-site-dropdown" data-site-menu-panel>';
-        echo '<a class="site-menu-register" href="' . e(app_url('admin/?page=sites&new=1')) . '">サイト登録</a>';
+        echo '<a class="site-menu-register" href="' . e(app_url('admin/?page=sites&new=1')) . '">＋ サイト登録</a>';
         if ($sites !== []) {
-            echo '<div class="site-menu-divider"></div>';
+            echo '<div class="site-menu-divider"></div><div class="site-menu-caption">登録サイト</div>';
             foreach ($sites as $site) {
                 $selected = $siteId === (int) $site['id'];
                 echo '<a class="site-menu-item' . ($selected ? ' is-selected' : '') . '" href="' . e(app_url('admin/?page=dashboard&site=' . (int) $site['id'])) . '"><span>' . e($site['name']) . '</span><small>' . e($site['url']) . '</small></a>';
