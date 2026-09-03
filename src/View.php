@@ -32,11 +32,6 @@ final class View
             ['audience', 'ユーザー属性'],
         ];
 
-        /*
-        |--------------------------------------------------------------------------
-        | HTML HEAD
-        |--------------------------------------------------------------------------
-        */
         echo '<!doctype html>';
         echo '<html lang="ja">';
         echo '<head>';
@@ -44,12 +39,7 @@ final class View
         echo '<meta name="viewport" content="width=device-width,initial-scale=1">';
         echo '<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">';
         echo '<title>' . e($displayTitle) . ' ‹ 阿修羅</title>';
-
-        /*
-        | 新しい管理画面CSSだけを読み込む
-        */
         echo '<link rel="stylesheet" href="' . e(app_url('assets/admin-shell.css')) . '">';
-
         echo '</head>';
         echo '<body>';
 
@@ -60,9 +50,6 @@ final class View
         */
         echo '<header class="adminbar">';
 
-        /*
-        | スマホのみ表示
-        */
         echo '<button
             type="button"
             class="mobile-nav-toggle"
@@ -71,9 +58,6 @@ final class View
             aria-expanded="false"
         >☰</button>';
 
-        /*
-        | 阿修羅
-        */
         echo '<a
             class="brand"
             href="' . e(app_url('admin/?page=dashboard')) . '"
@@ -81,7 +65,7 @@ final class View
 
         /*
         |--------------------------------------------------------------------------
-        | サイト選択
+        | サイト切り替え
         |--------------------------------------------------------------------------
         */
         echo '<details class="site-switcher">';
@@ -99,17 +83,11 @@ final class View
 
         echo '<div class="site-switcher-menu">';
 
-        /*
-        | 最上段：サイト登録
-        */
         echo '<a
             class="site-register"
             href="' . e(app_url('admin/?page=sites&new=1')) . '"
         >＋ サイト登録</a>';
 
-        /*
-        | 登録サイト
-        */
         foreach ($sites as $site) {
             $isCurrent = $siteId === (int) $site['id'];
 
@@ -131,9 +109,6 @@ final class View
         echo '</div>';
         echo '</details>';
 
-        /*
-        | ログアウト
-        */
         echo '<a
             class="top-logout"
             href="' . e(app_url('logout.php')) . '"
@@ -160,9 +135,7 @@ final class View
         echo '<nav class="sidebar-nav">';
 
         /*
-        |--------------------------------------------------------------------------
         | ダッシュボード
-        |--------------------------------------------------------------------------
         */
         echo self::navLink(
             'dashboard',
@@ -174,7 +147,7 @@ final class View
 
         /*
         |--------------------------------------------------------------------------
-        | サイト未選択
+        | 全体メニュー
         |--------------------------------------------------------------------------
         */
         if ($currentSite === null) {
@@ -215,7 +188,6 @@ final class View
             echo '<div class="nav-children">';
 
             foreach ($accessItems as [$key, $label]) {
-
                 $isActive =
                     $active === 'access'
                     && $report === $key;
@@ -230,11 +202,7 @@ final class View
                             . rawurlencode($key)
                         )
                     ) . '"
-                >';
-
-                echo '› ' . e($label);
-
-                echo '</a>';
+                >› ' . e($label) . '</a>';
             }
 
             echo '</div>';
@@ -264,9 +232,6 @@ final class View
 
             echo '<div class="nav-children">';
 
-            /*
-            | 相互リンクサイト登録
-            */
             echo '<a
                 class="nav-child' . ($active === 'links' ? ' active' : '') . '"
                 href="' . e(
@@ -278,9 +243,6 @@ final class View
                 ) . '"
             >› 相互リンクサイト登録</a>';
 
-            /*
-            | 逆アクセスランキング
-            */
             echo '<a
                 class="nav-child' . ($active === 'ranking' ? ' active' : '') . '"
                 href="' . e(
@@ -318,9 +280,6 @@ final class View
 
             echo '<div class="nav-children">';
 
-            /*
-            | サイト情報
-            */
             echo '<a
                 class="nav-child' . ($active === 'site_info' ? ' active' : '') . '"
                 href="' . e(
@@ -331,9 +290,6 @@ final class View
                 ) . '"
             >› サイト情報</a>';
 
-            /*
-            | 個人設定
-            */
             echo '<a
                 class="nav-child' . ($active === 'settings' ? ' active' : '') . '"
                 href="' . e(
@@ -383,7 +339,6 @@ final class View
         |--------------------------------------------------------------------------
         */
         if (!empty($_SESSION['flash'])) {
-
             $type = (string) (
                 $_SESSION['flash']['type']
                 ?? 'success'
@@ -414,7 +369,6 @@ final class View
         string $active,
         string $query = ''
     ): string {
-
         $class = 'nav-root';
 
         if ($active === $page) {
