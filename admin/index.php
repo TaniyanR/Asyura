@@ -10,14 +10,34 @@ use Asyura\View;
 Auth::requireLogin($config['app_url']);
 
 $page = (string) ($_GET['page'] ?? 'dashboard');
+
 if ($page === 'sites') {
     require __DIR__ . '/site-simple.php';
     exit;
 }
 
-$asyuraSites = $db->query('SELECT * FROM sites ORDER BY id')->fetchAll();
-$requestedSiteId = (int) ($_GET['site'] ?? $_POST['context_site_id'] ?? 0);
+/*
+|--------------------------------------------------------------------------
+| 登録サイト取得
+|--------------------------------------------------------------------------
+*/
+$asyuraSites = $db->query(
+    'SELECT * FROM sites ORDER BY id'
+)->fetchAll();
+
+/*
+|--------------------------------------------------------------------------
+| 現在のサイト
+|--------------------------------------------------------------------------
+*/
+$requestedSiteId = (int) (
+    $_GET['site']
+    ?? $_POST['context_site_id']
+    ?? 0
+);
+
 $asyuraCurrentSite = null;
+
 if ($requestedSiteId > 0) {
     foreach ($asyuraSites as $candidate) {
         if ((int) $candidate['id'] === $requestedSiteId) {
@@ -27,70 +47,315 @@ if ($requestedSiteId > 0) {
     }
 }
 
+/*
+|--------------------------------------------------------------------------
+| 管理画面POST処理
+|--------------------------------------------------------------------------
+*/
 (new AdminController($db, $config))->handle();
+
 require __DIR__ . '/pages.php';
 
-$allowed = ['dashboard','access','ranking','links','site_info','settings'];
-if (!in_array($page, $allowed, true)) $page = 'dashboard';
-if ($asyuraCurrentSite === null && $page !== 'dashboard') $page = 'dashboard';
+/*
+|--------------------------------------------------------------------------
+| 使用可能ページ
+|--------------------------------------------------------------------------
+*/
+$allowed = [
+    'dashboard',
+    'access',
+    'links',
+    'ranking',
+    'site_info',
+    'settings',
+];
+
+if (!in_array($page, $allowed, true)) {
+    $page = 'dashboard';
+}
+
+/*
+|--------------------------------------------------------------------------
+| サイト未選択時
+|--------------------------------------------------------------------------
+|
+| サイト固有ページには入らせず、
+| 全体ダッシュボードへ戻します。
+|
+*/
+if ($asyuraCurrentSite === null && $page !== 'dashboard') {
+    $page = 'dashboard';
+}
+
+/*
+|--------------------------------------------------------------------------
+| アクセス解析ページ
+|--------------------------------------------------------------------------
+*/
+$report = (string) ($_GET['report'] ?? 'traffic');
 
 $accessTitles = [
-    'traffic'=>'アクセス数（PV・セッション・UU）',
-    'channels'=>'流入経路（チャネル）',
-    'pages'=>'ページ別アクセス状況',
-    'engagement'=>'直帰率・エンゲージメント率',
-    'conversions'=>'コンバージョン数（CV）',
-    'duration'=>'滞在時間',
-    'keywords'=>'流入キーワード',
-    'audience'=>'ユーザー属性',
+    'traffic'     => 'アクセス数（PV・セッション・UU）',
+    'channels'    => '流入経路（チャネル）',
+    'pages'       => 'ページ別アクセス状況',
+    'engagement'  => '直帰率・エンゲージメント率',
+    'conversions' => 'コンバージョン数（CV）',
+    'duration'    => '滞在時間',
+    'keywords'    => '流入キーワード',
+    'audience'    => 'ユーザー属性',
 ];
-$report = (string) ($_GET['report'] ?? 'traffic');
+
+/*
+|--------------------------------------------------------------------------
+| ページタイトル
+|--------------------------------------------------------------------------
+*/
 $titles = [
-    'dashboard'=>'ダッシュボード',
-    'access'=>$accessTitles[$report] ?? $accessTitles['traffic'],
-    'ranking'=>'逆アクセスランキング',
-    'links'=>'相互リンクサイト登録',
-    'site_info'=>'サイト情報',
-    'settings'=>'個人設定',
+    'dashboard' => 'ダッシュボード',
+    'access'    => $accessTitles[$report] ?? $accessTitles['traffic'],
+    'links'     => '相互リンクサイト登録',
+    'ranking'   => '逆アクセスランキング',
+    'site_info' => 'サイト情報',
+    'settings'  => '個人設定',
 ];
 
-View::header($titles[$page], $page, $asyuraSites, $asyuraCurrentSite);
+View::header(
+    $titles[$page],
+    $page,
+    $asyuraSites,
+    $asyuraCurrentSite
+);
 
+/*
+|--------------------------------------------------------------------------
+| 全体ダッシュボード
+|--------------------------------------------------------------------------
+*/
 if ($page === 'dashboard' && $asyuraCurrentSite === null) {
+
     echo '<section class="global-dashboard">';
-    echo '<div class="global-dashboard-intro"><h2>各サイトのアクセス</h2><p>今日の状況をサイトごとに確認できます。</p></div>';
+
+    echo '<div class="dashboard-intro">';
+    echo '<h2>登録サイト</h2>';
+    echo '<p>各サイトの今日のアクセスと申請状況を確認できます。</p>';
+    echo '</div>';
+
     if ($asyuraSites === []) {
-        echo '<div class="empty-state"><strong>まだサイトが登録されていません。</strong><p>左メニューの「サイト登録」から登録してください。</p></div>';
+
+        echo '<div class="empty-state">';
+        echo '<strong>まだサイトが登録されていません。</strong>';
+        echo '<p>左の「サイト登録」から登録してください。</p>';
+        echo '</div>';
+
     } else {
-        $stmt = $db->prepare("SELECT s.id,s.name,s.url,COALESCE(d.pv,0) pv,COALESCE(d.uu,0) uu,(SELECT COUNT(DISTINCT re.session_hash) FROM raw_events re WHERE re.site_id=s.id AND re.event_type='pageview' AND re.is_bot=0 AND DATE(re.occurred_at)=CURDATE() AND re.session_hash IS NOT NULL) sessions,(SELECT COUNT(*) FROM link_requests lr WHERE lr.site_id=s.id AND lr.status='new') pending_requests FROM sites s LEFT JOIN daily_stats d ON d.site_id=s.id AND d.stat_date=CURDATE() ORDER BY s.id");
+
+        /*
+        |--------------------------------------------------------------------------
+        | 各サイトの簡易アクセス
+        |--------------------------------------------------------------------------
+        |
+        | 1サイトにつきカード1枚
+        |
+        | ・PV
+        | ・セッション
+        | ・UU
+        | ・保留中の申請
+        |
+        */
+        $stmt = $db->prepare(
+            "
+            SELECT
+                s.id,
+                s.name,
+                s.url,
+
+                COALESCE(d.pv, 0) AS pv,
+                COALESCE(d.uu, 0) AS uu,
+
+                (
+                    SELECT COUNT(DISTINCT re.session_hash)
+                    FROM raw_events re
+                    WHERE
+                        re.site_id = s.id
+                        AND re.event_type = 'pageview'
+                        AND re.is_bot = 0
+                        AND DATE(re.occurred_at) = CURDATE()
+                        AND re.session_hash IS NOT NULL
+                ) AS sessions,
+
+                (
+                    SELECT COUNT(*)
+                    FROM link_requests lr
+                    WHERE
+                        lr.site_id = s.id
+                        AND lr.status = 'new'
+                ) AS pending_requests
+
+            FROM sites s
+
+            LEFT JOIN daily_stats d
+                ON d.site_id = s.id
+                AND d.stat_date = CURDATE()
+
+            ORDER BY s.id
+            "
+        );
+
         $stmt->execute();
-        echo '<div class="global-site-grid">';
+
+        echo '<div class="site-card-list">';
+
         foreach ($stmt->fetchAll() as $row) {
-            echo '<a class="global-site-card" href="' . e(app_url('admin/?page=dashboard&site=' . (int) $row['id'])) . '">';
-            echo '<div class="global-site-head"><strong>' . e($row['name']) . '</strong><small>' . e($row['url']) . '</small></div>';
-            echo '<div class="global-site-stats four">';
-            echo '<div class="global-site-stat"><span>PV</span><b>' . number_format((int) $row['pv']) . '</b></div>';
-            echo '<div class="global-site-stat"><span>セッション</span><b>' . number_format((int) $row['sessions']) . '</b></div>';
-            echo '<div class="global-site-stat"><span>UU</span><b>' . number_format((int) $row['uu']) . '</b></div>';
-            echo '<div class="global-site-stat"><span>保留中の申請</span><b>' . number_format((int) $row['pending_requests']) . '</b></div>';
-            echo '</div><div class="global-site-open">このサイトを管理 →</div></a>';
+
+            $siteId = (int) $row['id'];
+
+            $siteUrl = app_url(
+                'admin/?page=dashboard&site=' . $siteId
+            );
+
+            echo '<a class="site-summary-card" href="' . e($siteUrl) . '">';
+
+            /*
+            |------------------------------------------------------------------
+            | サイト名
+            |------------------------------------------------------------------
+            */
+            echo '<div class="site-card-head">';
+
+            echo '<strong>';
+            echo e((string) $row['name']);
+            echo '</strong>';
+
+            echo '<small>';
+            echo e((string) $row['url']);
+            echo '</small>';
+
+            echo '</div>';
+
+            /*
+            |------------------------------------------------------------------
+            | アクセス数
+            |------------------------------------------------------------------
+            */
+            echo '<div class="site-card-stats">';
+
+            echo '<div class="site-card-stat">';
+            echo '<span>PV</span>';
+            echo '<b>' . number_format((int) $row['pv']) . '</b>';
+            echo '</div>';
+
+            echo '<div class="site-card-stat">';
+            echo '<span>セッション</span>';
+            echo '<b>' . number_format((int) $row['sessions']) . '</b>';
+            echo '</div>';
+
+            echo '<div class="site-card-stat">';
+            echo '<span>UU</span>';
+            echo '<b>' . number_format((int) $row['uu']) . '</b>';
+            echo '</div>';
+
+            echo '<div class="site-card-stat">';
+            echo '<span>保留中の申請</span>';
+            echo '<b>' . number_format((int) $row['pending_requests']) . '</b>';
+            echo '</div>';
+
+            echo '</div>';
+
+            /*
+            |------------------------------------------------------------------
+            | サイトを開く
+            |------------------------------------------------------------------
+            */
+            echo '<div class="site-card-foot">';
+            echo 'このサイトを開く →';
+            echo '</div>';
+
+            echo '</a>';
         }
+
         echo '</div>';
     }
+
     echo '</section>';
+
+/*
+|--------------------------------------------------------------------------
+| サイト個別ダッシュボード
+|--------------------------------------------------------------------------
+|
+| 「今日の状況」は表示しません。
+|
+*/
 } elseif ($page === 'dashboard' && $asyuraCurrentSite !== null) {
-    echo '<section class="site-dashboard-box"><h2>' . e($asyuraCurrentSite['name']) . '</h2><p>左の管理メニューから、このサイトの機能を選択してください。</p></section>';
+
+    echo '<section class="site-home">';
+
+    echo '<h2>';
+    echo e((string) $asyuraCurrentSite['name']);
+    echo '</h2>';
+
+    echo '<p>';
+    echo '左のメニューから、このサイトの管理項目を選択してください。';
+    echo '</p>';
+
+    echo '</section>';
+
+/*
+|--------------------------------------------------------------------------
+| アクセス
+|--------------------------------------------------------------------------
+*/
 } elseif ($page === 'access') {
+
     require __DIR__ . '/access-report.php';
+
+/*
+|--------------------------------------------------------------------------
+| サイト情報
+|--------------------------------------------------------------------------
+*/
 } elseif ($page === 'site_info') {
+
     require __DIR__ . '/site-info.php';
+
+/*
+|--------------------------------------------------------------------------
+| 個人設定
+|--------------------------------------------------------------------------
+|
+| Google Search Consoleの全体接続設定もこちら。
+|
+*/
 } elseif ($page === 'settings') {
+
     require __DIR__ . '/personal-settings.php';
+
+/*
+|--------------------------------------------------------------------------
+| 相互リンクサイト登録
+|--------------------------------------------------------------------------
+*/
 } elseif ($page === 'links') {
+
     $_GET['view'] = 'new';
-    asyura_page_links($db, $config);
+
+    asyura_page_links(
+        $db,
+        $config
+    );
+
+/*
+|--------------------------------------------------------------------------
+| その他
+|--------------------------------------------------------------------------
+*/
 } else {
-    call_user_func('asyura_page_' . $page, $db, $config);
+
+    call_user_func(
+        'asyura_page_' . $page,
+        $db,
+        $config
+    );
 }
 
 View::footer();
