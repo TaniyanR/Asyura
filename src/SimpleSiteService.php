@@ -15,6 +15,10 @@ final class SimpleSiteService
         if (!$stmt->fetch()) {
             $this->db->exec("ALTER TABLE sites ADD COLUMN rss_url VARCHAR(2048) NULL AFTER url");
         }
+        $stmt = $this->db->query("SHOW COLUMNS FROM sites LIKE 'search_console_property'");
+        if (!$stmt->fetch()) {
+            $this->db->exec("ALTER TABLE sites ADD COLUMN search_console_property VARCHAR(2048) NULL AFTER rss_url");
+        }
     }
 
     public function save(array $data): int
@@ -27,20 +31,24 @@ final class SimpleSiteService
 
         $rssUrl = self::optionalUrl($data['rss_url'] ?? null, 'サイトRSS');
         $loginUrl = self::optionalUrl($data['login_url'] ?? null, 'ログインURL');
+        $searchConsoleProperty = trim((string)($data['search_console_property'] ?? '')) ?: null;
+        if ($searchConsoleProperty !== null && !str_starts_with($searchConsoleProperty, 'sc-domain:') && !filter_var($searchConsoleProperty, FILTER_VALIDATE_URL)) {
+            throw new \InvalidArgumentException('Search Consoleプロパティが正しくありません。');
+        }
         $email = trim((string) ($data['admin_email'] ?? ''));
         if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new \InvalidArgumentException('管理メールアドレスが正しくありません。');
         $description = Security::cleanText($data['description'] ?? '', 2000) ?: null;
 
         if ($id > 0) {
-            $stmt = $this->db->prepare('UPDATE sites SET name=?,url=?,rss_url=?,login_url=?,normalized_url=?,description=?,admin_email=? WHERE id=?');
-            $stmt->execute([$name,$url,$rssUrl,$loginUrl,UrlNormalizer::normalize($url),$description,$email ?: null,$id]);
+            $stmt = $this->db->prepare('UPDATE sites SET name=?,url=?,rss_url=?,search_console_property=?,login_url=?,normalized_url=?,description=?,admin_email=? WHERE id=?');
+            $stmt->execute([$name,$url,$rssUrl,$searchConsoleProperty,$loginUrl,UrlNormalizer::normalize($url),$description,$email ?: null,$id]);
             return $id;
         }
 
         $this->db->beginTransaction();
         try {
-            $stmt = $this->db->prepare('INSERT INTO sites (public_id,site_key,name,url,rss_url,login_url,normalized_url,description,admin_email,active,ranking_enabled,links_enabled,rss_enabled,rotation_enabled) VALUES (?,?,?,?,?,?,?,?,?,1,1,1,1,1)');
-            $stmt->execute([Security::randomToken(8),Security::randomToken(24),$name,$url,$rssUrl,$loginUrl,UrlNormalizer::normalize($url),$description,$email ?: null]);
+            $stmt = $this->db->prepare('INSERT INTO sites (public_id,site_key,name,url,rss_url,search_console_property,login_url,normalized_url,description,admin_email,active,ranking_enabled,links_enabled,rss_enabled,rotation_enabled) VALUES (?,?,?,?,?,?,?,?,?,?,1,1,1,1,1)');
+            $stmt->execute([Security::randomToken(8),Security::randomToken(24),$name,$url,$rssUrl,$searchConsoleProperty,$loginUrl,UrlNormalizer::normalize($url),$description,$email ?: null]);
             $id = (int) $this->db->lastInsertId();
             $this->createDefaultWidgets($id, $name);
             $this->db->commit();
