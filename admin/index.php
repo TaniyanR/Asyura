@@ -84,6 +84,8 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
     require __DIR__ . '/access-report.php';
 } elseif ($page === 'site_info') {
     require __DIR__ . '/site-info.php';
+} elseif ($page === 'settings') {
+    require __DIR__ . '/personal-settings.php';
 } elseif ($page === 'links') {
     $_GET['view'] = 'new';
     asyura_page_links($db, $config);
