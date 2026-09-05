@@ -18,13 +18,14 @@ final class Auth
         $attempts = $_SESSION['login_attempts'] ?? [];
         $attempts = array_values(array_filter($attempts, static fn (int $time): bool => $time > $now - 900));
         if (count($attempts) >= 5) {
+            $this->logLoginSecurity('admin_login_rate_limit', '同じセッションから15分以内に5回を超えるログイン操作を拒否しました。');
             return false;
         }
 
         $ipHash=Security::ipHash($this->config['app_key'],'login');
         $rate=$this->db->prepare('SELECT COUNT(*) FROM login_attempts WHERE ip_hash=? AND attempted_at>=NOW()-INTERVAL 15 MINUTE');
         $rate->execute([$ipHash]);
-        if((int)$rate->fetchColumn()>=5)return false;
+        if((int)$rate->fetchColumn()>=5){$this->logLoginSecurity('admin_login_rate_limit', '同じ送信元から15分以内に5回を超えるログイン操作を拒否しました。');return false;}
 
         $stmt = $this->db->prepare('SELECT id, username, password_hash FROM admins WHERE username = ? LIMIT 1');
         $stmt->execute([$username]);
@@ -33,6 +34,7 @@ final class Auth
             $attempts[] = $now;
             $_SESSION['login_attempts'] = $attempts;
             $this->db->prepare('INSERT INTO login_attempts (ip_hash,username) VALUES (?,?)')->execute([$ipHash,mb_substr($username,0,100)]);
+            $this->logLoginSecurity('admin_login_failed', '管理画面へのログイン失敗を検知しました。ユーザー名: '.Security::cleanText($username,100));
             return false;
         }
 
@@ -44,6 +46,11 @@ final class Auth
         $this->db->prepare('DELETE FROM login_attempts WHERE ip_hash=?')->execute([$ipHash]);
         $this->db->prepare('UPDATE admins SET last_login_at = NOW() WHERE id = ?')->execute([$admin['id']]);
         return true;
+    }
+
+    private function logLoginSecurity(string $code,string $details):void
+    {
+        try{(new Tracker($this->db,$this->config))->logSecurity(null,$code,'critical',$details,(string)($_SERVER['HTTP_ORIGIN']??($_SERVER['HTTP_REFERER']??'')));}catch(\Throwable $e){error_log('[Asyura auth security log] '.$e->getMessage());}
     }
 
     public static function check(): bool
