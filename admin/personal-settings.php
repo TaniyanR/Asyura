@@ -2,64 +2,17 @@
 declare(strict_types=1);
 
 use Asyura\SearchConsoleService;
-use Asyura\Security;
-use Asyura\View;
 
-$service = new SearchConsoleService($db, $config);
-$service->ensureSchema();
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!Security::verifyCsrf($_POST['csrf_token'] ?? null)) {
-        View::flash('画面の有効期限が切れました。もう一度お試しください。', 'error');
-        redirect(app_url('admin/?page=settings' . (!empty($asyuraCurrentSite['id']) ? '&site=' . (int)$asyuraCurrentSite['id'] : '')));
-    }
-    $action = (string)($_POST['action'] ?? '');
-    try {
-        if ($action === 'save_search_console_credentials') {
-            $secret = trim((string)($_POST['client_secret'] ?? ''));
-            $service->saveCredentials((string)($_POST['client_id'] ?? ''), $secret !== '' ? $secret : null);
-            View::flash('Google OAuth設定を保存しました。');
-        } elseif ($action === 'disconnect_search_console') {
-            $service->disconnect();
-            View::flash('Google Search Consoleとの接続を解除しました。');
-        }
-    } catch (Throwable $e) {
-        View::flash($e->getMessage(), 'error');
-    }
-    redirect(app_url('admin/?page=settings' . (!empty($asyuraCurrentSite['id']) ? '&site=' . (int)$asyuraCurrentSite['id'] : '')));
-}
-
-$status = $service->status();
-$callback = app_url('admin/search-console-callback.php');
-$siteQuery = !empty($asyuraCurrentSite['id']) ? '?site=' . (int)$asyuraCurrentSite['id'] : '';
-
-echo '<div class="panel"><h2>Google Search Console</h2><div class="panel-body">';
-echo '<p>Googleアカウントとの接続は阿修羅全体で1回だけ行います。接続後、各サイトの「サイト情報」でSearch Consoleプロパティを選択します。</p>';
-echo '<form method="post">' . csrf_field() . '<input type="hidden" name="action" value="save_search_console_credentials">';
-echo '<label>Google OAuth クライアントID<input name="client_id" value="' . e($status['client_id']) . '" autocomplete="off" required></label>';
-echo '<label>Google OAuth クライアントシークレット<input type="password" name="client_secret" value="" autocomplete="new-password" placeholder="' . ($status['has_client_secret'] ? '保存済み（変更する場合のみ入力）' : 'クライアントシークレットを入力') . '"></label>';
-echo '<label>承認済みのリダイレクトURI<input value="' . e($callback) . '" readonly></label>';
-echo '<p class="description">Google Cloud側のOAuth 2.0クライアントに、上記リダイレクトURIをそのまま登録してください。読み取り専用権限で接続します。</p>';
-echo '<div class="actions"><button type="submit" class="button primary">OAuth設定を保存</button></div></form>';
-echo '</div></div>';
-
+$service=new SearchConsoleService($db,$config);$service->ensureSchema();$status=$service->status();$callback=app_url('admin/search-console-callback.php');$properties=[];$propertyError='';
+if($status['connected']){try{$properties=$service->listProperties();}catch(Throwable $e){$propertyError=$e->getMessage();}}
+echo '<div class="panel"><h2>Googleアカウント接続（阿修羅全体で1回）</h2><div class="panel-body"><p>同じGoogleアカウントを阿修羅に1回接続し、下の一覧でサイトごとにプロパティを割り当てます。権限は読み取り専用です。</p>';
+echo '<form method="post">'.csrf_field().'<input type="hidden" name="action" value="save_search_console_credentials"><label>Google OAuth クライアントID<input name="client_id" value="'.e($status['client_id']).'" autocomplete="off" required></label><label>Google OAuth クライアントシークレット<input type="password" name="client_secret" autocomplete="new-password" placeholder="'.($status['has_client_secret']?'保存済み（変更時のみ入力）':'入力してください').'"></label><label>承認済みリダイレクトURI<input value="'.e($callback).'" readonly></label><div class="actions"><button class="button primary">OAuth設定を保存</button></div></form></div></div>';
 echo '<div class="panel"><h2>接続状態</h2><div class="panel-body">';
-if ($status['connected']) {
-    echo '<p><strong>接続済み</strong>' . (!empty($status['connected_at']) ? '　' . e((string)$status['connected_at']) : '') . '</p>';
-    try {
-        $properties = $service->listProperties();
-        echo '<p>利用可能なSearch Consoleプロパティ：<strong>' . number_format(count($properties)) . '</strong> 件</p>';
-    } catch (Throwable $e) {
-        echo '<div class="notice error">' . e($e->getMessage()) . '</div>';
-    }
-    echo '<div class="actions"><a class="button" href="' . e(app_url('admin/search-console-connect.php' . $siteQuery)) . '">Googleアカウントを再接続</a>';
-    echo '<form method="post" style="display:inline">' . csrf_field() . '<input type="hidden" name="action" value="disconnect_search_console"><button type="submit" class="button danger">接続解除</button></form></div>';
-} else {
-    echo '<p>まだGoogle Search Consoleに接続されていません。</p>';
-    if ($status['client_id'] !== '' && $status['has_client_secret']) {
-        echo '<a class="button primary" href="' . e(app_url('admin/search-console-connect.php' . $siteQuery)) . '">Googleアカウントで接続</a>';
-    } else {
-        echo '<p class="description">先に上のOAuth設定を保存してください。</p>';
-    }
-}
+if($status['connected']){echo '<p><span class="status-pill success">接続済み</span> '.e((string)($status['connected_at']??'')).'</p><div class="actions"><a class="button" href="'.e(app_url('admin/search-console-connect.php')).'">Googleアカウントを再接続</a><form method="post">'.csrf_field().'<input type="hidden" name="action" value="disconnect_search_console"><button class="button danger">接続解除</button></form></div>';}else{echo '<p>未接続です。</p>';if($status['client_id']!==''&&$status['has_client_secret'])echo '<a class="button primary" href="'.e(app_url('admin/search-console-connect.php')).'">Googleアカウントで接続</a>';}
 echo '</div></div>';
+echo '<div class="panel"><h2>サイト別プロパティ設定</h2><div class="panel-body"><p>アンテナサイトなどSearch Consoleへ登録しないサイトは「使用しない」のままで構いません。</p>';
+if($propertyError!=='')echo '<div class="notice error">'.e($propertyError).'</div>';
+echo '<form method="post">'.csrf_field().'<input type="hidden" name="action" value="save_search_console_properties"><div class="table-wrap"><table class="wp-list"><thead><tr><th>サイト</th><th>Search Consoleプロパティ</th><th>状態</th></tr></thead><tbody>';
+foreach($asyuraSites as $site){$current=(string)($site['search_console_property']??'');echo '<tr><td><strong>'.e($site['name']).'</strong><br><small>'.e($site['url']).'</small></td><td><select name="properties['.(int)$site['id'].']"><option value="">使用しない（アンテナサイト等）</option>';$seen=false;foreach($properties as $property){$value=(string)$property['siteUrl'];if($value===$current)$seen=true;echo '<option value="'.e($value).'"'.($value===$current?' selected':'').'>'.e($value).'</option>';}if($current!==''&&!$seen)echo '<option value="'.e($current).'" selected>'.e($current).'（現在設定・一覧外）</option>';echo '</select></td><td>'.($current!==''?'<span class="status-pill success">設定済み</span>':'<span class="status-pill muted">未使用</span>').'</td></tr>';}
+if($asyuraSites===[])echo '<tr><td colspan="3" class="empty">登録サイトがありません。</td></tr>';
+echo '</tbody></table></div><div class="actions"><button class="button primary">サイト別設定を保存</button></div></form></div></div>';

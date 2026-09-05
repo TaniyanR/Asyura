@@ -3,96 +3,63 @@ declare(strict_types=1);
 
 use Asyura\SearchConsoleService;
 
-if (!isset($asyuraCurrentSite) || !is_array($asyuraCurrentSite)) {
-    echo '<div class="empty-state"><strong>サイトが選択されていません。</strong></div>';
-    return;
+if(!isset($asyuraCurrentSite)||!is_array($asyuraCurrentSite)){echo '<div class="empty-state">サイトが選択されていません。</div>';return;}
+$siteId=(int)$asyuraCurrentSite['id'];$report=(string)($_GET['report']??'traffic');
+$allowed=['traffic','channels','pages','engagement','conversions','duration','keywords','audience','security'];if(!in_array($report,$allowed,true))$report='traffic';
+$days=in_array((int)($_GET['days']??30),[7,30,90],true)?(int)$_GET['days']:30;$interval=$days-1;
+$urlFor=static fn(int $d):string=>app_url('admin/?page=access&site='.$siteId.'&report='.rawurlencode($report).'&days='.$d);
+echo '<div class="analytics-toolbar"><span>表示期間</span>';foreach([7=>'7日',30=>'30日',90=>'90日']as$d=>$label)echo '<a class="range-button'.($days===$d?' active':'').'" href="'.e($urlFor($d)).'">'.$label.'</a>';echo '<small>時刻・日付はJST</small></div>';
+$emptyRow=static function(int $cols,string $message):void{echo '<tr><td colspan="'.$cols.'" class="empty">'.e($message).'</td></tr>';};
+$bar=static function(float $value,float $max,string $tone='blue'):string{$width=$max>0?max(2,min(100,$value/$max*100)):0;return '<div class="metric-bar"><span class="'.$tone.'" style="width:'.number_format($width,1,'.','').'%"></span></div>';};
+$duration=static function(float $seconds):string{if($seconds<60)return number_format($seconds,1).'秒';return floor($seconds/60).'分 '.str_pad((string)round(fmod($seconds,60)),2,'0',STR_PAD_LEFT).'秒';};
+
+if($report==='traffic'){
+    $q=$db->prepare("SELECT COALESCE(SUM(pv),0) pv,COALESCE(SUM(uu),0) uu FROM daily_stats WHERE site_id=? AND stat_date>=CURDATE()-INTERVAL {$interval} DAY");$q->execute([$siteId]);$sum=$q->fetch()?:['pv'=>0,'uu'=>0];
+    $q=$db->prepare("SELECT COUNT(DISTINCT session_hash) FROM raw_events WHERE site_id=? AND event_type='pageview' AND is_bot=0 AND occurred_at>=CURDATE()-INTERVAL {$interval} DAY");$q->execute([$siteId]);$sessions=(int)$q->fetchColumn();$pps=$sessions>0?(int)$sum['pv']/$sessions:0;
+    echo '<div class="analytics-cards"><div class="analytics-card blue"><span>PV</span><strong>'.number_format((int)$sum['pv']).'</strong></div><div class="analytics-card green"><span>セッション</span><strong>'.number_format($sessions).'</strong></div><div class="analytics-card purple"><span>UU</span><strong>'.number_format((int)$sum['uu']).'</strong></div><div class="analytics-card orange"><span>ページ / セッション</span><strong>'.number_format($pps,2).'</strong></div></div>';
+    $q=$db->prepare("SELECT stat_date,pv,uu FROM daily_stats WHERE site_id=? AND stat_date>=CURDATE()-INTERVAL {$interval} DAY ORDER BY stat_date");$q->execute([$siteId]);$rows=$q->fetchAll();$max=max(1,...array_map(static fn($r)=>(int)$r['pv'],$rows));
+    echo '<div class="panel"><h2>日別アクセス推移</h2><div class="panel-body"><div class="daily-chart">';foreach($rows as$r){$h=max(2,(int)$r['pv']/$max*100);echo '<div class="chart-column" title="'.e($r['stat_date']).' PV '.(int)$r['pv'].'"><span style="height:'.number_format($h,1,'.','').'%"></span><small>'.e(substr($r['stat_date'],5)).'</small></div>';}if($rows===[])echo '<p class="empty">この期間のデータはありません。</p>';echo '</div></div><div class="table-wrap"><table class="wp-list"><thead><tr><th>日付</th><th>PV</th><th>UU</th></tr></thead><tbody>';foreach(array_reverse($rows)as$r)echo '<tr><td>'.e($r['stat_date']).'</td><td>'.number_format((int)$r['pv']).'</td><td>'.number_format((int)$r['uu']).'</td></tr>';if($rows===[])$emptyRow(3,'この期間のデータはありません。');echo '</tbody></table></div></div>';return;
 }
 
-$siteId = (int) $asyuraCurrentSite['id'];
-$report = (string) ($_GET['report'] ?? 'traffic');
-$allowedReports = ['traffic','channels','pages','engagement','conversions','duration','keywords','audience'];
-if (!in_array($report, $allowedReports, true)) $report = 'traffic';
-
-if ($report === 'traffic') {
-    $stmt = $db->prepare("SELECT COALESCE(SUM(pv),0) pv, COALESCE(SUM(uu),0) uu FROM daily_stats WHERE site_id=? AND stat_date=CURDATE()");
-    $stmt->execute([$siteId]);
-    $today = $stmt->fetch() ?: ['pv'=>0,'uu'=>0];
-    $sessionStmt = $db->prepare("SELECT COUNT(DISTINCT session_hash) FROM raw_events WHERE site_id=? AND event_type='pageview' AND is_bot=0 AND DATE(occurred_at)=CURDATE() AND session_hash IS NOT NULL");
-    $sessionStmt->execute([$siteId]);
-    $sessions = (int) $sessionStmt->fetchColumn();
-    echo '<div class="cards"><div class="card"><div><div class="number">'.number_format((int)$today['pv']).'</div><div class="label">今日のPV</div></div></div><div class="card green"><div><div class="number">'.number_format($sessions).'</div><div class="label">今日のセッション</div></div></div><div class="card purple"><div><div class="number">'.number_format((int)$today['uu']).'</div><div class="label">今日のUU</div></div></div></div>';
-    return;
+if($report==='channels'){
+    $channelSql="CASE WHEN channel IS NOT NULL AND channel<>'' THEN channel WHEN referrer_host IS NULL OR referrer_host='' THEN 'direct' WHEN referrer_host REGEXP 'google\\.|bing\\.|yahoo\\.|duckduckgo\\.|baidu\\.|yandex\\.' THEN 'search' WHEN referrer_host REGEXP '(^|\\.)(x\\.com|twitter\\.com|facebook\\.com|instagram\\.com|tiktok\\.com|youtube\\.com|line\\.me)$' THEN 'social' ELSE 'referral' END";
+    $q=$db->prepare("SELECT {$channelSql} channel,COUNT(DISTINCT session_hash) sessions,COUNT(*) pv,COUNT(DISTINCT visitor_hash) uu FROM raw_events WHERE site_id=? AND event_type='pageview' AND is_bot=0 AND occurred_at>=CURDATE()-INTERVAL {$interval} DAY GROUP BY channel ORDER BY sessions DESC");$q->execute([$siteId]);$rows=$q->fetchAll();$labels=['direct'=>'直接・不明','search'=>'検索','social'=>'SNS','referral'=>'参照サイト'];$max=max(1,...array_map(static fn($r)=>(int)$r['sessions'],$rows));$tones=['direct'=>'blue','search'=>'green','social'=>'purple','referral'=>'orange'];
+    echo '<div class="panel"><h2>流入チャネル</h2><div class="table-wrap"><table class="wp-list"><thead><tr><th>チャネル</th><th>比率</th><th>セッション</th><th>PV</th><th>UU</th></tr></thead><tbody>';foreach($rows as$r){$key=(string)$r['channel'];echo '<tr><td><span class="channel-dot '.e($tones[$key]??'blue').'"></span>'.e($labels[$key]??$key).'</td><td class="bar-cell">'.$bar((int)$r['sessions'],$max,$tones[$key]??'blue').'</td><td>'.number_format((int)$r['sessions']).'</td><td>'.number_format((int)$r['pv']).'</td><td>'.number_format((int)$r['uu']).'</td></tr>';}if($rows===[])$emptyRow(5,'この期間の流入データはありません。');echo '</tbody></table></div></div>';
+    $q=$db->prepare("SELECT COALESCE(referrer_host,'直接') referrer_host,COUNT(*) pv,COUNT(DISTINCT session_hash) sessions FROM raw_events WHERE site_id=? AND event_type='pageview' AND is_bot=0 AND occurred_at>=CURDATE()-INTERVAL {$interval} DAY GROUP BY referrer_host ORDER BY sessions DESC LIMIT 50");$q->execute([$siteId]);echo '<div class="panel"><h2>参照元サイト</h2><div class="table-wrap"><table class="wp-list"><thead><tr><th>参照元</th><th>セッション</th><th>PV</th></tr></thead><tbody>';foreach($q as$r)echo '<tr><td>'.e($r['referrer_host']).'</td><td>'.number_format((int)$r['sessions']).'</td><td>'.number_format((int)$r['pv']).'</td></tr>';echo '</tbody></table></div></div>';return;
 }
 
-if ($report === 'channels') {
-    $stmt = $db->prepare("SELECT CASE WHEN referrer_host IS NULL OR referrer_host='' THEN '直接・不明' WHEN referrer_host LIKE '%google.%' OR referrer_host LIKE '%bing.%' OR referrer_host LIKE '%yahoo.%' THEN '検索' WHEN referrer_host LIKE '%twitter.com%' OR referrer_host LIKE '%x.com%' OR referrer_host LIKE '%facebook.com%' OR referrer_host LIKE '%instagram.com%' THEN 'SNS' ELSE '参照サイト' END channel, COUNT(*) visits FROM raw_events WHERE site_id=? AND event_type='pageview' AND is_bot=0 AND occurred_at>=NOW()-INTERVAL 30 DAY GROUP BY channel ORDER BY visits DESC");
-    $stmt->execute([$siteId]);
-    echo '<div class="panel"><h2>過去30日の流入経路</h2><div class="panel-body"><table class="wp-list"><thead><tr><th>チャネル</th><th>アクセス</th></tr></thead><tbody>';
-    foreach ($stmt->fetchAll() as $row) echo '<tr><td>'.e($row['channel']).'</td><td>'.number_format((int)$row['visits']).'</td></tr>';
-    echo '</tbody></table></div></div>';
-    return;
+if($report==='pages'){
+    $q=$db->prepare("SELECT COALESCE(NULLIF(page_title,''),'（タイトルなし）') title,normalized_page_url,COUNT(*) pv,COUNT(DISTINCT visitor_hash) uu,COUNT(DISTINCT session_hash) sessions FROM raw_events WHERE site_id=? AND event_type='pageview' AND is_bot=0 AND occurred_at>=CURDATE()-INTERVAL {$interval} DAY GROUP BY normalized_page_url,title ORDER BY pv DESC LIMIT 100");$q->execute([$siteId]);$rows=$q->fetchAll();$max=max(1,...array_map(static fn($r)=>(int)$r['pv'],$rows));echo '<div class="panel"><h2>ページ別アクセス</h2><div class="table-wrap"><table class="wp-list"><thead><tr><th>ページ</th><th>閲覧量</th><th>PV</th><th>セッション</th><th>UU</th></tr></thead><tbody>';foreach($rows as$r)echo '<tr><td><strong>'.e($r['title']).'</strong><br><small>'.e($r['normalized_page_url']).'</small></td><td class="bar-cell">'.$bar((int)$r['pv'],$max,'blue').'</td><td>'.number_format((int)$r['pv']).'</td><td>'.number_format((int)$r['sessions']).'</td><td>'.number_format((int)$r['uu']).'</td></tr>';if($rows===[])$emptyRow(5,'この期間のページデータはありません。');echo '</tbody></table></div></div>';return;
 }
 
-if ($report === 'pages') {
-    $stmt = $db->prepare("SELECT normalized_page_url, COUNT(*) pv, COUNT(DISTINCT visitor_hash) uu FROM raw_events WHERE site_id=? AND event_type='pageview' AND is_bot=0 AND occurred_at>=NOW()-INTERVAL 30 DAY GROUP BY normalized_page_url ORDER BY pv DESC LIMIT 100");
-    $stmt->execute([$siteId]);
-    echo '<div class="panel"><h2>過去30日のページ別アクセス</h2><div class="panel-body"><table class="wp-list"><thead><tr><th>ページ</th><th>PV</th><th>UU</th></tr></thead><tbody>';
-    foreach ($stmt->fetchAll() as $row) echo '<tr><td>'.e($row['normalized_page_url']).'</td><td>'.number_format((int)$row['pv']).'</td><td>'.number_format((int)$row['uu']).'</td></tr>';
-    echo '</tbody></table></div></div>';
-    return;
+if($report==='engagement'){
+    $q=$db->prepare("SELECT COUNT(*) sessions,SUM(pageviews=1) bounced,SUM(pageviews>1 OR engagement_ms>=10000 OR conversion_count>0) engaged,AVG(pageviews) pages_per_session,AVG(engagement_ms)/1000 avg_seconds FROM analytics_sessions WHERE site_id=? AND is_bot=0 AND started_at>=CURDATE()-INTERVAL {$interval} DAY");$q->execute([$siteId]);$r=$q->fetch()?:[];$count=(int)($r['sessions']??0);$bounce=$count?((int)$r['bounced']/$count*100):0;$engage=$count?((int)$r['engaged']/$count*100):0;
+    echo '<div class="analytics-cards"><div class="analytics-card red"><span>直帰率</span><strong>'.number_format($bounce,1).'%</strong></div><div class="analytics-card green"><span>エンゲージメント率</span><strong>'.number_format($engage,1).'%</strong></div><div class="analytics-card blue"><span>平均ページ数</span><strong>'.number_format((float)($r['pages_per_session']??0),2).'</strong></div><div class="analytics-card purple"><span>平均実滞在</span><strong>'.$duration((float)($r['avg_seconds']??0)).'</strong></div></div><div class="notice info">新しい計測タグで取得したセッションから、操作中の実滞在時間を使って集計します。過去のpageviewだけの期間は高度指標に含まれません。</div>';return;
 }
 
-if ($report === 'keywords') {
-    $searchConsole = new SearchConsoleService($db, $config);
-    $searchConsole->ensureSchema();
-    $property = trim((string)($asyuraCurrentSite['search_console_property'] ?? ''));
-    $status = $searchConsole->status();
-    if (!$status['connected']) {
-        echo '<div class="panel"><div class="panel-body"><p>Google Search Consoleが未接続です。</p><a class="button primary" href="'.e(app_url('admin/?page=settings&site='.$siteId)).'">個人設定で接続する</a></div></div>';
-        return;
-    }
-    if ($property === '') {
-        echo '<div class="panel"><div class="panel-body"><p>このサイトにSearch Consoleプロパティが設定されていません。</p><a class="button primary" href="'.e(app_url('admin/?page=site_info&site='.$siteId)).'">サイト情報で設定する</a></div></div>';
-        return;
-    }
-    $endDate = date('Y-m-d', strtotime('-1 day'));
-    $startDate = date('Y-m-d', strtotime($endDate . ' -27 days'));
-    try {
-        $rows = $searchConsole->queryKeywords($property,$startDate,$endDate);
-        echo '<div class="panel"><h2>Google検索キーワード</h2><div class="panel-body">';
-        echo '<p class="description">'.e($startDate).' ～ '.e($endDate).' / '.e($property).'。Search Console APIの確定データを表示します。</p>';
-        echo '<div class="table-wrap"><table class="wp-list"><thead><tr><th>検索キーワード</th><th>流入先ページ</th><th>クリック</th><th>表示回数</th><th>CTR</th><th>平均順位</th></tr></thead><tbody>';
-        if ($rows === []) {
-            echo '<tr><td colspan="6" class="empty">この期間のSearch Consoleデータはありません。</td></tr>';
-        } else {
-            foreach ($rows as $row) {
-                $keys = is_array($row['keys'] ?? null) ? $row['keys'] : [];
-                $query = (string)($keys[0] ?? '');
-                $page = (string)($keys[1] ?? '');
-                echo '<tr><td>'.e($query).'</td><td class="sc-page">'.e($page).'</td><td>'.number_format((float)($row['clicks'] ?? 0),0).'</td><td>'.number_format((float)($row['impressions'] ?? 0),0).'</td><td>'.number_format(((float)($row['ctr'] ?? 0))*100,1).'%</td><td>'.number_format((float)($row['position'] ?? 0),1).'</td></tr>';
-            }
-        }
-        echo '</tbody></table></div><p class="description">Search Consoleの仕様上、プライバシー保護などにより全検索語句が表示されるとは限りません。</p></div></div>';
-    } catch (Throwable $e) {
-        echo '<div class="notice error">'.e($e->getMessage()).'</div>';
-    }
-    return;
+if($report==='duration'){
+    $q=$db->prepare("SELECT CASE WHEN engagement_ms<10000 THEN '0〜9秒' WHEN engagement_ms<30000 THEN '10〜29秒' WHEN engagement_ms<60000 THEN '30〜59秒' WHEN engagement_ms<180000 THEN '1〜2分' ELSE '3分以上' END bucket,COUNT(*) sessions FROM analytics_sessions WHERE site_id=? AND is_bot=0 AND started_at>=CURDATE()-INTERVAL {$interval} DAY GROUP BY bucket ORDER BY MIN(engagement_ms)");$q->execute([$siteId]);$rows=$q->fetchAll();$max=max(1,...array_map(static fn($r)=>(int)$r['sessions'],$rows));echo '<div class="panel"><h2>実滞在時間の分布</h2><div class="table-wrap"><table class="wp-list"><thead><tr><th>実滞在時間</th><th>分布</th><th>セッション</th></tr></thead><tbody>';foreach($rows as$r)echo '<tr><td>'.e($r['bucket']).'</td><td class="bar-cell">'.$bar((int)$r['sessions'],$max,'purple').'</td><td>'.number_format((int)$r['sessions']).'</td></tr>';if($rows===[])$emptyRow(3,'新しい計測タグによる滞在データはまだありません。');echo '</tbody></table></div></div>';return;
 }
 
-$messages = [
-    'engagement' => '直帰率・エンゲージメント率を正確に出すには、セッション単位の滞在イベントと離脱判定の追加が必要です。誤差の大きい概算値は表示しません。',
-    'conversions' => 'コンバージョンは、購入・問い合わせ・特定URL到達など「何をCVとするか」の設定が必要です。CV定義機能を追加してから計測します。',
-    'duration' => '滞在時間はpageviewだけでは正確に測れません。pagehide / visibilitychange等を使った滞在イベントを追加してから表示します。',
-];
-if (isset($messages[$report])) {
-    echo '<div class="panel"><div class="panel-body"><p>'.e($messages[$report]).'</p></div></div>';
-    return;
+if($report==='conversions'){
+    $rules=$db->prepare('SELECT * FROM conversion_rules WHERE site_id=? ORDER BY id DESC');$rules->execute([$siteId]);$ruleRows=$rules->fetchAll();
+    echo '<div class="panel"><h2>コンバージョン定義</h2><div class="panel-body"><form method="post">'.csrf_field().'<input type="hidden" name="action" value="save_conversion_rule"><input type="hidden" name="context_site_id" value="'.$siteId.'"><div class="form-grid"><label>CV名<input name="name" placeholder="お問い合わせ完了" required></label><label>到達URL・パス<input name="url_pattern" placeholder="/thanks/" required></label><label>判定<select name="match_type"><option value="contains">含む</option><option value="prefix">先頭一致</option><option value="exact">完全一致</option></select></label></div><button class="button primary">CV定義を追加</button></form></div></div>';
+    $q=$db->prepare("SELECT r.id,r.name,r.url_pattern,r.match_type,COUNT(e.id) conversions,COUNT(DISTINCT e.session_hash) cv_sessions FROM conversion_rules r LEFT JOIN conversion_events e ON e.rule_id=r.id AND e.site_id=r.site_id AND e.occurred_at>=CURDATE()-INTERVAL {$interval} DAY WHERE r.site_id=? GROUP BY r.id ORDER BY conversions DESC,r.id DESC");$q->execute([$siteId]);$stats=$q->fetchAll();echo '<div class="panel"><h2>CV集計</h2><div class="table-wrap"><table class="wp-list"><thead><tr><th>CV名</th><th>判定URL</th><th>CV</th><th>CVセッション</th><th></th></tr></thead><tbody>';foreach($stats as$r)echo '<tr><td><strong>'.e($r['name']).'</strong></td><td>'.e($r['url_pattern']).'<br><small>'.e($r['match_type']).'</small></td><td>'.number_format((int)$r['conversions']).'</td><td>'.number_format((int)$r['cv_sessions']).'</td><td><form method="post" data-confirm="このCV定義を削除しますか？">'.csrf_field().'<input type="hidden" name="action" value="delete_conversion_rule"><input type="hidden" name="context_site_id" value="'.$siteId.'"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="button danger">削除</button></form></td></tr>';if($stats===[])$emptyRow(5,'CV定義はまだありません。');echo '</tbody></table></div></div>';return;
 }
 
-if ($report === 'audience') {
-    $stmt = $db->prepare("SELECT COALESCE(device,'不明') device, COUNT(*) views FROM raw_events WHERE site_id=? AND event_type='pageview' AND is_bot=0 AND occurred_at>=NOW()-INTERVAL 30 DAY GROUP BY device ORDER BY views DESC");
-    $stmt->execute([$siteId]);
-    echo '<div class="panel"><h2>過去30日のユーザー属性</h2><div class="panel-body"><table class="wp-list"><thead><tr><th>デバイス</th><th>PV</th></tr></thead><tbody>';
-    foreach ($stmt->fetchAll() as $row) echo '<tr><td>'.e($row['device']).'</td><td>'.number_format((int)$row['views']).'</td></tr>';
-    echo '</tbody></table><p class="description">現時点では端末種別などの技術属性を表示します。年齢・性別などの個人属性は取得しません。</p></div></div>';
+if($report==='keywords'){
+    $service=new SearchConsoleService($db,$config);$service->ensureSchema();$property=trim((string)($asyuraCurrentSite['search_console_property']??''));$status=$service->status();
+    if(!$status['connected']||$property===''){echo '<div class="panel"><div class="panel-body"><p>'.(!$status['connected']?'Google Search Consoleが未接続です。':'このサイトはSearch Consoleを使用しない設定です。').'</p><a class="button primary" href="'.e(app_url('admin/?page=search_console')).'">Google Search Console設定を開く</a></div></div>';return;}
+    $end=date('Y-m-d',strtotime('-1 day'));$start=date('Y-m-d',strtotime($end.' -27 days'));
+    try{$rows=$service->queryKeywords($property,$start,$end);echo '<div class="panel"><h2>Google検索キーワード</h2><div class="panel-body"><p class="description">'.e($start).' ～ '.e($end).' / '.e($property).'</p><div class="table-wrap"><table class="wp-list"><thead><tr><th>検索キーワード</th><th>流入先ページ</th><th>クリック</th><th>表示回数</th><th>CTR</th><th>平均順位</th></tr></thead><tbody>';foreach($rows as$r){$keys=is_array($r['keys']??null)?$r['keys']:[];echo '<tr><td>'.e((string)($keys[0]??'')).'</td><td>'.e((string)($keys[1]??'')).'</td><td>'.number_format((float)($r['clicks']??0),0).'</td><td>'.number_format((float)($r['impressions']??0),0).'</td><td>'.number_format((float)($r['ctr']??0)*100,1).'%</td><td>'.number_format((float)($r['position']??0),1).'</td></tr>';}if($rows===[])$emptyRow(6,'この期間のデータはありません。');echo '</tbody></table></div></div></div>';}catch(Throwable $e){echo '<div class="notice error">'.e($e->getMessage()).'</div>';}return;
+}
+
+if($report==='audience'){
+    foreach(['device'=>'デバイス','browser'=>'ブラウザ','os'=>'OS']as$column=>$label){$q=$db->prepare("SELECT COALESCE(NULLIF({$column},''),'不明') label,COUNT(*) pv,COUNT(DISTINCT visitor_hash) uu FROM raw_events WHERE site_id=? AND event_type='pageview' AND is_bot=0 AND occurred_at>=CURDATE()-INTERVAL {$interval} DAY GROUP BY {$column} ORDER BY pv DESC");$q->execute([$siteId]);$rows=$q->fetchAll();$max=max(1,...array_map(static fn($r)=>(int)$r['pv'],$rows));echo '<div class="panel audience-panel"><h2>'.e($label).'</h2><div class="table-wrap"><table class="wp-list"><thead><tr><th>'.e($label).'</th><th>比率</th><th>PV</th><th>UU</th></tr></thead><tbody>';foreach($rows as$r)echo '<tr><td>'.e($r['label']).'</td><td class="bar-cell">'.$bar((int)$r['pv'],$max,'blue').'</td><td>'.number_format((int)$r['pv']).'</td><td>'.number_format((int)$r['uu']).'</td></tr>';if($rows===[])$emptyRow(4,'データはありません。');echo '</tbody></table></div></div>';}echo '<p class="description">年齢・性別などの個人属性は取得せず、技術属性だけを表示します。</p>';return;
+}
+
+if($report==='security'){
+    $q=$db->prepare("SELECT COUNT(*) total,COALESCE(SUM(hit_count),0) hits,SUM(severity='critical') critical FROM tracking_security_events WHERE site_id=? AND last_seen_at>=CURDATE()-INTERVAL {$interval} DAY");$q->execute([$siteId]);$sum=$q->fetch()?:[];$q=$db->prepare("SELECT COUNT(*) FROM raw_events WHERE site_id=? AND is_bot=1 AND occurred_at>=CURDATE()-INTERVAL {$interval} DAY");$q->execute([$siteId]);$bots=(int)$q->fetchColumn();
+    echo '<div class="analytics-cards"><div class="analytics-card red"><span>重大な拒否パターン</span><strong>'.number_format((int)($sum['critical']??0)).'</strong></div><div class="analytics-card orange"><span>検知件数</span><strong>'.number_format((int)($sum['hits']??0)).'</strong></div><div class="analytics-card purple"><span>Bot・自動アクセス</span><strong>'.number_format($bots).'</strong></div></div><div class="notice warning">検知は防御と調査の補助です。サーバーのWAF・アクセスログと併用してください。IPアドレスそのものは保存せず、復元できないハッシュで集計します。</div>';
+    $q=$db->prepare("SELECT event_code,severity,origin_host,details,hit_count,first_seen_at,last_seen_at FROM tracking_security_events WHERE site_id=? AND last_seen_at>=CURDATE()-INTERVAL {$interval} DAY ORDER BY FIELD(severity,'critical','warning','info'),last_seen_at DESC LIMIT 100");$q->execute([$siteId]);$rows=$q->fetchAll();$labels=['invalid_site_key'=>'無効なサイトキー','origin_rejected'=>'許可外の送信元','rate_limit'=>'異常な送信頻度','automation_detected'=>'Bot・自動操作','invalid_payload'=>'不正な送信内容','invalid_page'=>'許可外ページ'];echo '<div class="panel"><h2>検知ログ</h2><div class="table-wrap"><table class="wp-list"><thead><tr><th>重要度</th><th>内容</th><th>送信元</th><th>回数</th><th>最終検知</th></tr></thead><tbody>';foreach($rows as$r)echo '<tr><td><span class="security-badge '.e($r['severity']).'">'.e($r['severity']).'</span></td><td><strong>'.e($labels[$r['event_code']]??$r['event_code']).'</strong><br><small>'.e($r['details']).'</small></td><td>'.e($r['origin_host']?:'不明').'</td><td>'.number_format((int)$r['hit_count']).'</td><td>'.e($r['last_seen_at']).'</td></tr>';if($rows===[])$emptyRow(5,'この期間に疑わしいアクセスは検知されていません。');echo '</tbody></table></div></div>';return;
 }

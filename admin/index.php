@@ -47,6 +47,12 @@ if ($requestedSiteId > 0) {
     }
 }
 
+if ($asyuraCurrentSite !== null) {
+    $_SESSION['admin_site_id'] = (int)$asyuraCurrentSite['id'];
+} else {
+    unset($_SESSION['admin_site_id']);
+}
+
 /*
 |--------------------------------------------------------------------------
 | 管理画面POST処理
@@ -69,6 +75,10 @@ $allowed = [
     'ranking',
     'site_info',
     'settings',
+    'search_console',
+    'notices',
+    'contact',
+    'requests',
 ];
 
 if (!in_array($page, $allowed, true)) {
@@ -80,7 +90,7 @@ if (!in_array($page, $allowed, true)) {
 | サイト未選択時
 |--------------------------------------------------------------------------
 */
-if ($asyuraCurrentSite === null && $page !== 'dashboard') {
+if ($asyuraCurrentSite === null && !in_array($page, ['dashboard','search_console'], true)) {
     $page = 'dashboard';
 }
 
@@ -100,6 +110,7 @@ $accessTitles = [
     'duration'    => '滞在時間',
     'keywords'    => '流入キーワード',
     'audience'    => 'ユーザー属性',
+    'security'    => '不正・疑わしいアクセス',
 ];
 
 /*
@@ -115,6 +126,10 @@ $titles = [
     'ranking'   => '逆アクセスランキング',
     'site_info' => 'サイト情報',
     'settings'  => '個人設定',
+    'search_console' => 'Google Search Console',
+    'notices' => 'お知らせ',
+    'contact' => 'お問い合わせ',
+    'requests' => 'お問い合わせ受信一覧',
 ];
 
 View::header(
@@ -303,8 +318,19 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
 |--------------------------------------------------------------------------
 */
 } elseif ($page === 'settings') {
+    asyura_page_settings($db, $config);
 
+} elseif ($page === 'search_console') {
     require __DIR__ . '/personal-settings.php';
+
+} elseif ($page === 'contact') {
+    require __DIR__ . '/contact-settings.php';
+
+} elseif ($page === 'notices') {
+    asyura_page_notices($db, $config);
+
+} elseif ($page === 'requests') {
+    asyura_page_requests($db, $config);
 
 /*
 |--------------------------------------------------------------------------

@@ -30,6 +30,7 @@ final class View
             ['duration', '滞在時間'],
             ['keywords', '流入キーワード'],
             ['audience', 'ユーザー属性'],
+            ['security', '不正・疑わしいアクセス'],
         ];
 
         $switcherLabel = 'サイト登録';
@@ -168,6 +169,13 @@ final class View
                 '&new=1'
             );
 
+            echo self::navLink(
+                'search_console',
+                'G',
+                'Google Search Console',
+                $active
+            );
+
         /*
         |--------------------------------------------------------------------------
         | サイト個別メニュー
@@ -225,6 +233,14 @@ final class View
 
             echo '</div>';
             echo '</details>';
+
+            $siteFeaturesOpen = in_array($active, ['notices','contact','requests'], true);
+            echo '<details class="nav-group" '.($siteFeaturesOpen?'open':'').'>';
+            echo '<summary><span class="nav-icon">✦</span><span>サイト機能</span><b>▾</b></summary><div class="nav-children">';
+            echo '<a class="nav-child'.($active==='notices'?' active':'').'" href="'.e(app_url('admin/?page=notices'.$siteQuery)).'">› お知らせ</a>';
+            echo '<a class="nav-child'.($active==='contact'?' active':'').'" href="'.e(app_url('admin/?page=contact'.$siteQuery)).'">› お問い合わせ</a>';
+            echo '<a class="nav-child'.($active==='requests'?' active':'').'" href="'.e(app_url('admin/?page=requests'.$siteQuery)).'">› お問い合わせ受信一覧</a>';
+            echo '</div></details>';
 
             /*
             |--------------------------------------------------------------------------

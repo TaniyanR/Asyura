@@ -43,6 +43,13 @@ final class AdminController
                 'update_request' => $this->updateRequest(),
                 'save_settings' => $this->saveSettings(),
                 'change_password' => $this->changePassword(),
+                'save_site_info' => $this->saveSiteInfo(),
+                'save_search_console_credentials' => $this->saveSearchConsoleCredentials(),
+                'disconnect_search_console' => (new SearchConsoleService($this->db,$this->config))->disconnect(),
+                'save_search_console_properties' => $this->saveSearchConsoleProperties(),
+                'save_conversion_rule' => $this->saveConversionRule(),
+                'delete_conversion_rule' => $this->deleteConversionRule(),
+                'save_contact_settings' => $this->saveContactSettings(),
                 default => throw new \InvalidArgumentException('操作が正しくありません。'),
             };
             View::flash('保存しました。');
@@ -53,7 +60,8 @@ final class AdminController
             View::flash('処理中にエラーが発生しました。入力内容とサーバーログを確認してください。', 'error');
         }
         $siteId = (int) ($_SESSION['admin_site_id'] ?? 0);
-        redirect(app_url('admin/?page=' . urlencode((string) ($_GET['page'] ?? 'dashboard')) . ($siteId > 0 ? '&site=' . $siteId : '')));
+        $report=(string)($_GET['report']??'');
+        redirect(app_url('admin/?page=' . urlencode((string) ($_GET['page'] ?? 'dashboard')) . ($siteId > 0 ? '&site=' . $siteId : '') . ($report!==''?'&report='.rawurlencode($report):'')));
     }
 
     private function saveSite(): void
@@ -65,6 +73,46 @@ final class AdminController
         } else {
             $service->create($_POST);
         }
+    }
+
+    private function saveSiteInfo():void
+    {
+        $_POST['id']=$this->contextSiteId();
+        (new SimpleSiteService($this->db))->save($_POST);
+    }
+
+    private function saveSearchConsoleCredentials():void
+    {
+        $secret=trim((string)($_POST['client_secret']??''));
+        (new SearchConsoleService($this->db,$this->config))->saveCredentials((string)($_POST['client_id']??''),$secret!==''?$secret:null);
+    }
+
+    private function saveSearchConsoleProperties():void
+    {
+        (new SearchConsoleService($this->db,$this->config))->ensureSchema();
+        $properties=(array)($_POST['properties']??[]);
+        $allowed=$this->db->query('SELECT id FROM sites')->fetchAll(PDO::FETCH_COLUMN);
+        $stmt=$this->db->prepare('UPDATE sites SET search_console_property=? WHERE id=?');
+        foreach($allowed as $id){$value=trim((string)($properties[(string)$id]??''));if($value!==''&&!str_starts_with($value,'sc-domain:')&&!filter_var($value,FILTER_VALIDATE_URL))throw new \InvalidArgumentException('Search Consoleプロパティが正しくありません。');$stmt->execute([$value!==''?$value:null,(int)$id]);}
+    }
+
+    private function saveConversionRule():void
+    {
+        $name=Security::cleanText($_POST['name']??'',255);$pattern=trim((string)($_POST['url_pattern']??''));
+        if($name===''||$pattern==='')throw new \InvalidArgumentException('CV名と到達URLを入力してください。');
+        if(strlen($pattern)>2048)throw new \InvalidArgumentException('到達URLが長すぎます。');
+        $type=in_array($_POST['match_type']??'',['exact','prefix','contains'],true)?$_POST['match_type']:'contains';
+        $this->db->prepare('INSERT INTO conversion_rules (site_id,name,url_pattern,match_type,active) VALUES (?,?,?,?,1)')->execute([$this->contextSiteId(),$name,$pattern,$type]);
+    }
+
+    private function deleteConversionRule():void
+    {
+        $this->db->prepare('DELETE FROM conversion_rules WHERE id=? AND site_id=?')->execute([(int)($_POST['id']??0),$this->contextSiteId()]);
+    }
+
+    private function saveContactSettings():void
+    {
+        $this->db->prepare('UPDATE sites SET contact_ads_notice=?,contact_links_notice=?,contact_custom_enabled=?,contact_custom_text=? WHERE id=?')->execute([isset($_POST['contact_ads_notice'])?1:0,isset($_POST['contact_links_notice'])?1:0,isset($_POST['contact_custom_enabled'])?1:0,Security::cleanText($_POST['contact_custom_text']??'',3000)?:null,$this->contextSiteId()]);
     }
 
     private function deleteSite(): void
