@@ -3,8 +3,10 @@ declare(strict_types=1);
 
 require dirname(__DIR__).'/src/UrlNormalizer.php';
 require dirname(__DIR__).'/src/Security.php';
+require dirname(__DIR__).'/src/SimpleSiteService.php';
 
 use Asyura\Security;
+use Asyura\SimpleSiteService;
 use Asyura\UrlNormalizer;
 
 $tests=[
@@ -15,6 +17,12 @@ $tests=[
 ];
 $failed=0;
 foreach($tests as $input=>$expected){$actual=UrlNormalizer::normalize($input);if($actual!==$expected){fwrite(STDERR,"FAIL {$input}\n expected: {$expected}\n actual:   {$actual}\n");$failed++;}else{echo "OK {$input}\n";}}
+$sitePartition=SimpleSiteService::partitionByUrl([
+    ['id'=>1,'url'=>'https://example.com/','normalized_url'=>'https://example.com/'],
+    ['id'=>2,'url'=>'http://www.example.com','normalized_url'=>'https://example.com/'],
+    ['id'=>3,'url'=>'https://another.example/','normalized_url'=>'https://another.example/'],
+]);
+if(array_column($sitePartition['visible'],'id')!==[1,3]||array_column($sitePartition['duplicates'],'id')!==[2]){fwrite(STDERR,"FAIL duplicate site partition\n");$failed++;}
 $requiredGroups=['Google・SEO','HTML・Web確認','GitHub','AI','その他ツール'];
 $adminLinks=require dirname(__DIR__).'/config/admin_links.php';
 foreach($requiredGroups as $group){if(!array_key_exists($group,$adminLinks)){fwrite(STDERR,"FAIL missing admin link group: {$group}\n");$failed++;}}
@@ -37,4 +45,6 @@ $inquiry=(string)file_get_contents(dirname(__DIR__).'/public/inquiry.php');
 foreach(['form_token','website_confirm','tracking_rate_limits','contact_messages','consent','site_id'] as $needle){if(!str_contains($inquiry,$needle)){fwrite(STDERR,"FAIL inquiry protection missing: {$needle}\n");$failed++;}}
 foreach(['contact_messages',"'schema_version' => '4'",'idx_contact_message_site_status'] as $needle){if(!str_contains($migration,$needle)){fwrite(STDERR,"FAIL inquiry migration missing: {$needle}\n");$failed++;}}
 $inquiryAdmin=(string)file_get_contents(dirname(__DIR__).'/admin/inquiries.php');foreach(['unread','reviewing','resolved','WHERE id=? AND site_id=?'] as $needle){if(!str_contains($inquiryAdmin,$needle)){fwrite(STDERR,"FAIL inquiry admin missing: {$needle}\n");$failed++;}}
+$simpleSite=(string)file_get_contents(dirname(__DIR__).'/src/SimpleSiteService.php');foreach(['partitionByUrl','このサイトURLはすでに登録されています','FOR UPDATE'] as $needle){if(!str_contains($simpleSite,$needle)){fwrite(STDERR,"FAIL duplicate site protection missing: {$needle}\n");$failed++;}}
+$sitePage=(string)file_get_contents(dirname(__DIR__).'/admin/site-simple.php');if(!str_contains($sitePage,'重複登録を確認')){fwrite(STDERR,"FAIL duplicate site review UI missing\n");$failed++;}
 if($failed){exit(1);}echo "All tests passed.\n";

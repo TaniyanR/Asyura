@@ -5,6 +5,7 @@ require dirname(__DIR__) . '/src/bootstrap.php';
 
 use Asyura\AdminController;
 use Asyura\Auth;
+use Asyura\SimpleSiteService;
 use Asyura\View;
 
 Auth::requireLogin($config['app_url']);
@@ -21,9 +22,11 @@ if ($page === 'sites') {
 | 登録サイト取得
 |--------------------------------------------------------------------------
 */
-$asyuraSites = $db->query(
+$asyuraAllSites = $db->query(
     'SELECT * FROM sites ORDER BY id'
 )->fetchAll();
+$asyuraSitePartition = SimpleSiteService::partitionByUrl($asyuraAllSites);
+$asyuraSites = $asyuraSitePartition['visible'];
 
 /*
 |--------------------------------------------------------------------------
@@ -39,7 +42,7 @@ $requestedSiteId = (int) (
 $asyuraCurrentSite = null;
 
 if ($requestedSiteId > 0) {
-    foreach ($asyuraSites as $candidate) {
+    foreach ($asyuraAllSites as $candidate) {
         if ((int) $candidate['id'] === $requestedSiteId) {
             $asyuraCurrentSite = $candidate;
             break;
@@ -203,11 +206,13 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
                 ON d.site_id = s.id
                 AND d.stat_date = CURDATE()
 
+            WHERE s.id IN (" . implode(',', array_fill(0, count($asyuraSites), '?')) . ")
+
             ORDER BY s.id
             "
         );
 
-        $stmt->execute();
+        $stmt->execute(array_map(static fn(array $site): int => (int) $site['id'], $asyuraSites));
 
         echo '<div class="site-card-list">';
 

@@ -28,7 +28,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$sites = $db->query('SELECT * FROM sites ORDER BY id')->fetchAll();
+$allSites = $db->query('SELECT * FROM sites ORDER BY id')->fetchAll();
+$sitePartition = SimpleSiteService::partitionByUrl($allSites);
+$sites = $sitePartition['visible'];
+$duplicateSites = $sitePartition['duplicates'];
 $editId = (int) ($_GET['edit'] ?? 0);
 $site = null;
 if ($editId > 0) {
@@ -80,5 +83,13 @@ if ($sites === []) {
 
 echo '</div>';
 echo '</section>';
+
+if ($duplicateSites !== []) {
+    echo '<details class="panel"><summary><strong>重複登録を確認（' . count($duplicateSites) . '件）</strong></summary><div class="panel-body"><p class="description">同じサイトURLの登録です。解析データを守るため自動削除していません。内容を確認して不要な登録だけを削除してください。</p><div class="registered-site-list">';
+    foreach ($duplicateSites as $duplicateSite) {
+        echo '<article class="registered-site-card"><div class="registered-site-main"><strong>' . e((string) $duplicateSite['name']) . '</strong><span>' . e((string) $duplicateSite['url']) . ' / ID: ' . (int) $duplicateSite['id'] . '</span></div><div class="registered-site-actions"><a class="button" href="' . e(app_url('admin/?page=sites&edit=' . (int) $duplicateSite['id'])) . '">確認・削除</a></div></article>';
+    }
+    echo '</div></div></details>';
+}
 
 View::footer();
