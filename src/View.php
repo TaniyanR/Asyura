@@ -32,6 +32,15 @@ final class View
             ['audience', 'ユーザー属性'],
         ];
 
+        $switcherLabel = 'サイト登録';
+        if ($currentSite !== null) {
+            $switcherLabel = (string) $currentSite['name'];
+        } elseif (count($sites) === 1) {
+            $switcherLabel = (string) $sites[0]['name'];
+        } elseif ($sites !== []) {
+            $switcherLabel = 'サイトを選択';
+        }
+
         echo '<!doctype html>';
         echo '<html lang="ja">';
         echo '<head>';
@@ -72,12 +81,7 @@ final class View
 
         echo '<summary>';
 
-        if ($currentSite !== null) {
-            echo e((string) $currentSite['name']);
-        } else {
-            echo 'サイト登録';
-        }
-
+        echo '<strong class="site-switcher-label">' . e($switcherLabel) . '</strong>';
         echo '<span>▼</span>';
         echo '</summary>';
 
@@ -132,6 +136,10 @@ final class View
         |--------------------------------------------------------------------------
         */
         echo '<aside class="sidebar" data-sidebar>';
+        echo '<div class="sidebar-mobile-head">';
+        echo '<strong>メニュー</strong>';
+        echo '<button type="button" data-mobile-menu-close aria-label="メニューを閉じる">×</button>';
+        echo '</div>';
         echo '<nav class="sidebar-nav">';
 
         /*
@@ -172,7 +180,7 @@ final class View
             | アクセス
             |--------------------------------------------------------------------------
             */
-            $accessOpen = $active === 'access';
+            $accessOpen = in_array($active, ['access', 'tracking_tag'], true);
 
             echo '<details
                 class="nav-group"
@@ -204,6 +212,16 @@ final class View
                     ) . '"
                 >› ' . e($label) . '</a>';
             }
+
+            echo '<a
+                class="nav-child' . ($active === 'tracking_tag' ? ' active' : '') . '"
+                href="' . e(
+                    app_url(
+                        'admin/?page=tracking_tag'
+                        . $siteQuery
+                    )
+                ) . '"
+            >› 計測タグ</a>';
 
             echo '</div>';
             echo '</details>';

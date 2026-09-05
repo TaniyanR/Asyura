@@ -54,4 +54,31 @@ if ((int) $site['id'] > 0) {
     echo '<div class="danger-zone" style="max-width:960px"><h2>サイトを完全削除</h2><p>関連データも削除され、元に戻せません。</p><form method="post" data-confirm="本当にサイトを削除しますか？">' . csrf_field() . '<input type="hidden" name="action" value="delete_site_simple"><input type="hidden" name="id" value="' . (int) $site['id'] . '"><label><input type="radio" name="confirm_delete" value="no" checked>いいえ</label><label><input type="radio" name="confirm_delete" value="yes">はい</label><button class="button danger" type="submit">削除</button></form></div>';
 }
 
+echo '<section class="registered-sites panel">';
+echo '<h2>登録済みサイト</h2>';
+echo '<div class="panel-body">';
+
+if ($sites === []) {
+    echo '<p class="registered-sites-empty">登録済みのサイトはありません。</p>';
+} else {
+    echo '<div class="registered-site-list">';
+    foreach ($sites as $registeredSite) {
+        $registeredSiteId = (int) $registeredSite['id'];
+        echo '<article class="registered-site-card">';
+        echo '<div class="registered-site-main">';
+        echo '<strong>' . e((string) $registeredSite['name']) . '</strong>';
+        echo '<a href="' . e((string) $registeredSite['url']) . '" target="_blank" rel="noopener noreferrer">' . e((string) $registeredSite['url']) . '</a>';
+        echo '</div>';
+        echo '<div class="registered-site-actions">';
+        echo '<a class="button primary" href="' . e(app_url('admin/?page=dashboard&site=' . $registeredSiteId)) . '">管理画面</a>';
+        echo '<a class="button" href="' . e(app_url('admin/?page=sites&edit=' . $registeredSiteId)) . '">編集</a>';
+        echo '</div>';
+        echo '</article>';
+    }
+    echo '</div>';
+}
+
+echo '</div>';
+echo '</section>';
+
 View::footer();
