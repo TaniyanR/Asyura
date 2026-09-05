@@ -10,11 +10,10 @@ use Asyura\Security;
 Auth::requireLogin($config['app_url']);
 Security::startSession();
 
-$siteId = (int)($_SESSION['search_console_return_site'] ?? 0);
-$returnUrl = app_url('admin/?page=settings' . ($siteId > 0 ? '&site=' . $siteId : ''));
+$returnUrl = app_url('admin/?page=search_console');
 $expectedState = (string)($_SESSION['search_console_oauth_state'] ?? '');
 $state = (string)($_GET['state'] ?? '');
-unset($_SESSION['search_console_oauth_state'], $_SESSION['search_console_return_site']);
+unset($_SESSION['search_console_oauth_state']);
 
 if ($expectedState === '' || $state === '' || !hash_equals($expectedState, $state)) {
     $_SESSION['flash'] = ['type'=>'error','message'=>'Google認証の確認に失敗しました。もう一度接続してください。'];

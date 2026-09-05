@@ -36,6 +36,8 @@ final class Migration
                 site_key VARCHAR(64) NOT NULL,
                 name VARCHAR(255) NOT NULL,
                 url VARCHAR(2048) NOT NULL,
+                rss_url VARCHAR(2048) NULL,
+                search_console_property VARCHAR(2048) NULL,
                 login_url VARCHAR(2048) NULL,
                 github_url VARCHAR(2048) NULL,
                 normalized_url VARCHAR(2048) NOT NULL,
@@ -86,6 +88,8 @@ final class Migration
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS raw_events (
                 id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                event_id CHAR(36) NULL,
+                pageview_id CHAR(36) NULL,
                 site_id BIGINT UNSIGNED NOT NULL,
                 event_type ENUM('pageview','internal_click','outbound','widget_click') NOT NULL DEFAULT 'pageview',
                 visitor_hash CHAR(64) NOT NULL,
@@ -94,6 +98,7 @@ final class Migration
                 normalized_page_url VARCHAR(2048) NOT NULL,
                 referrer_url VARCHAR(2048) NULL,
                 referrer_host VARCHAR(255) NULL,
+                channel VARCHAR(30) NULL,
                 target_url VARCHAR(2048) NULL,
                 widget_id BIGINT UNSIGNED NULL,
                 page_title VARCHAR(500) NULL,
@@ -102,9 +107,13 @@ final class Migration
                 browser VARCHAR(50) NULL,
                 os VARCHAR(50) NULL,
                 is_bot TINYINT(1) NOT NULL DEFAULT 0,
+                is_suspicious TINYINT(1) NOT NULL DEFAULT 0,
                 occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT fk_event_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                UNIQUE KEY uq_event_dedup (site_id,event_id),
                 INDEX idx_event_site_time (site_id, occurred_at),
+                INDEX idx_event_pageview (site_id,pageview_id),
+                INDEX idx_event_suspicious (site_id,is_suspicious,occurred_at),
                 INDEX idx_event_visitor (site_id, visitor_hash, occurred_at),
                 INDEX idx_event_referrer (site_id, referrer_host, occurred_at),
                 INDEX idx_event_type (site_id, event_type, occurred_at)
@@ -356,6 +365,102 @@ final class Migration
                 finished_at DATETIME NULL,
                 INDEX idx_cron_task_time (task_name, started_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS analytics_sessions (
+                site_id BIGINT UNSIGNED NOT NULL,
+                session_hash CHAR(64) NOT NULL,
+                visitor_hash CHAR(64) NOT NULL,
+                started_at DATETIME NOT NULL,
+                last_seen_at DATETIME NOT NULL,
+                pageviews INT UNSIGNED NOT NULL DEFAULT 0,
+                engagement_ms BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                conversion_count INT UNSIGNED NOT NULL DEFAULT 0,
+                channel VARCHAR(30) NOT NULL DEFAULT 'direct',
+                referrer_host VARCHAR(255) NULL,
+                landing_page VARCHAR(2048) NULL,
+                exit_page VARCHAR(2048) NULL,
+                device VARCHAR(30) NULL,
+                browser VARCHAR(50) NULL,
+                os VARCHAR(50) NULL,
+                is_bot TINYINT(1) NOT NULL DEFAULT 0,
+                is_suspicious TINYINT(1) NOT NULL DEFAULT 0,
+                PRIMARY KEY (site_id,session_hash),
+                CONSTRAINT fk_analytics_session_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                INDEX idx_analytics_session_time (site_id,started_at),
+                INDEX idx_analytics_session_visitor (site_id,visitor_hash,started_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS analytics_pageviews (
+                site_id BIGINT UNSIGNED NOT NULL,
+                pageview_id CHAR(36) NOT NULL,
+                session_hash CHAR(64) NOT NULL,
+                visitor_hash CHAR(64) NOT NULL,
+                page_url VARCHAR(2048) NOT NULL,
+                normalized_page_url VARCHAR(2048) NOT NULL,
+                page_title VARCHAR(500) NULL,
+                started_at DATETIME NOT NULL,
+                last_seen_at DATETIME NOT NULL,
+                engagement_ms BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                scroll_depth TINYINT UNSIGNED NOT NULL DEFAULT 0,
+                is_bot TINYINT(1) NOT NULL DEFAULT 0,
+                is_suspicious TINYINT(1) NOT NULL DEFAULT 0,
+                PRIMARY KEY (site_id,pageview_id),
+                CONSTRAINT fk_analytics_pageview_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                INDEX idx_analytics_pageview_time (site_id,started_at),
+                INDEX idx_analytics_pageview_session (site_id,session_hash)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS conversion_rules (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                site_id BIGINT UNSIGNED NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                url_pattern VARCHAR(2048) NOT NULL,
+                match_type ENUM('exact','prefix','contains') NOT NULL DEFAULT 'contains',
+                active TINYINT(1) NOT NULL DEFAULT 1,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                CONSTRAINT fk_conversion_rule_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                INDEX idx_conversion_rule_site (site_id,active)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS conversion_events (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                site_id BIGINT UNSIGNED NOT NULL,
+                rule_id BIGINT UNSIGNED NOT NULL,
+                pageview_id CHAR(36) NOT NULL,
+                session_hash CHAR(64) NOT NULL,
+                visitor_hash CHAR(64) NOT NULL,
+                page_url VARCHAR(2048) NOT NULL,
+                occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_conversion_event_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                CONSTRAINT fk_conversion_event_rule FOREIGN KEY (rule_id) REFERENCES conversion_rules(id) ON DELETE CASCADE,
+                UNIQUE KEY uq_conversion_pageview (site_id,rule_id,pageview_id),
+                INDEX idx_conversion_event_time (site_id,occurred_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS tracking_security_events (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                site_id BIGINT UNSIGNED NULL,
+                fingerprint CHAR(64) NOT NULL,
+                event_code VARCHAR(50) NOT NULL,
+                severity ENUM('info','warning','critical') NOT NULL DEFAULT 'warning',
+                request_hash CHAR(64) NOT NULL,
+                origin_host VARCHAR(255) NULL,
+                user_agent VARCHAR(500) NULL,
+                details VARCHAR(1000) NULL,
+                hit_count BIGINT UNSIGNED NOT NULL DEFAULT 1,
+                first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                resolved_at DATETIME NULL,
+                CONSTRAINT fk_tracking_security_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                UNIQUE KEY uq_tracking_security_fingerprint (fingerprint),
+                INDEX idx_tracking_security_time (site_id,last_seen_at),
+                INDEX idx_tracking_security_severity (site_id,severity,resolved_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS tracking_rate_limits (
+                site_id BIGINT UNSIGNED NOT NULL,
+                request_hash CHAR(64) NOT NULL,
+                window_start DATETIME NOT NULL,
+                hits INT UNSIGNED NOT NULL DEFAULT 1,
+                PRIMARY KEY (site_id,request_hash,window_start),
+                CONSTRAINT fk_tracking_rate_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                INDEX idx_tracking_rate_cleanup (window_start)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
         ];
 
         foreach ($queries as $query) {
@@ -363,7 +468,7 @@ final class Migration
         }
 
         $defaults = [
-            'schema_version' => '2',
+            'schema_version' => '3',
             'ranking_period_days' => '3',
             'distribution_window_hours' => '24',
             'raw_retention_days' => '180',
@@ -387,27 +492,64 @@ final class Migration
         $version = (int) ($db->query(
             "SELECT setting_value FROM settings WHERE setting_key='schema_version' LIMIT 1"
         )->fetchColumn() ?: 1);
-        if ($version >= 2) {
-            return;
+        if ($version < 3) {
+            self::run($db);
         }
-
         $exists = $db->prepare(
             'SELECT COUNT(*) FROM information_schema.COLUMNS
              WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?'
         );
-        $columns = [
-            'login_url' => 'ALTER TABLE sites ADD COLUMN login_url VARCHAR(2048) NULL AFTER url',
-            'github_url' => 'ALTER TABLE sites ADD COLUMN github_url VARCHAR(2048) NULL AFTER login_url',
-        ];
-        foreach ($columns as $column => $sql) {
-            $exists->execute(['sites', $column]);
-            if ((int) $exists->fetchColumn() === 0) {
-                $db->exec($sql);
+        if ($version < 2) {
+            $columns = [
+                'login_url' => 'ALTER TABLE sites ADD COLUMN login_url VARCHAR(2048) NULL AFTER url',
+                'github_url' => 'ALTER TABLE sites ADD COLUMN github_url VARCHAR(2048) NULL AFTER login_url',
+            ];
+            foreach ($columns as $column => $sql) {
+                $exists->execute(['sites', $column]);
+                if ((int) $exists->fetchColumn() === 0) {
+                    $db->exec($sql);
+                }
+            }
+        }
+
+        if ($version < 3) {
+            $siteColumns = [
+                'rss_url' => 'ALTER TABLE sites ADD COLUMN rss_url VARCHAR(2048) NULL AFTER url',
+                'search_console_property' => 'ALTER TABLE sites ADD COLUMN search_console_property VARCHAR(2048) NULL AFTER rss_url',
+            ];
+            foreach ($siteColumns as $column => $sql) {
+                $exists->execute(['sites', $column]);
+                if ((int) $exists->fetchColumn() === 0) {
+                    $db->exec($sql);
+                }
+            }
+            $columns = [
+                'event_id' => 'ALTER TABLE raw_events ADD COLUMN event_id CHAR(36) NULL AFTER id',
+                'pageview_id' => 'ALTER TABLE raw_events ADD COLUMN pageview_id CHAR(36) NULL AFTER event_id',
+                'channel' => "ALTER TABLE raw_events ADD COLUMN channel VARCHAR(30) NULL AFTER referrer_host",
+                'is_suspicious' => 'ALTER TABLE raw_events ADD COLUMN is_suspicious TINYINT(1) NOT NULL DEFAULT 0 AFTER is_bot',
+            ];
+            foreach ($columns as $column => $sql) {
+                $exists->execute(['raw_events', $column]);
+                if ((int) $exists->fetchColumn() === 0) {
+                    $db->exec($sql);
+                }
+            }
+            $indexExists = $db->prepare('SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND INDEX_NAME=?');
+            foreach ([
+                'uq_event_dedup' => 'ALTER TABLE raw_events ADD UNIQUE KEY uq_event_dedup (site_id,event_id)',
+                'idx_event_pageview' => 'ALTER TABLE raw_events ADD INDEX idx_event_pageview (site_id,pageview_id)',
+                'idx_event_suspicious' => 'ALTER TABLE raw_events ADD INDEX idx_event_suspicious (site_id,is_suspicious,occurred_at)',
+            ] as $index => $sql) {
+                $indexExists->execute(['raw_events', $index]);
+                if ((int) $indexExists->fetchColumn() === 0) {
+                    $db->exec($sql);
+                }
             }
         }
 
         $stmt = $db->prepare(
-            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','2')
+            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','3')
              ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)"
         );
         $stmt->execute();
