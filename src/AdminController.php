@@ -19,8 +19,8 @@ final class AdminController
         if (!Security::verifyCsrf($_POST['csrf_token'] ?? null)) {
             View::flash('画面の有効期限が切れました。もう一度お試しください。', 'error');
             $siteId = (int) ($_SESSION['admin_site_id'] ?? 0);
-            $report=(string)($_GET['report']??'');$days=(int)($_GET['days']??0);
-            redirect(app_url('admin/?page=' . urlencode((string) ($_GET['page'] ?? 'dashboard')) . ($siteId > 0 ? '&site=' . $siteId : '') . ($report!==''?'&report='.rawurlencode($report):'') . (in_array($days,[7,30,90],true)?'&days='.$days:'')));
+            $pageName=(string)($_GET['page']??'dashboard');$report=(string)($_GET['report']??'');$days=(int)($_GET['days']??0);$inquiryId=$pageName==='inquiries'?(int)($_GET['id']??0):0;
+            redirect(app_url('admin/?page=' . urlencode($pageName) . ($siteId > 0 ? '&site=' . $siteId : '') . ($report!==''?'&report='.rawurlencode($report):'') . (in_array($days,[7,30,90],true)?'&days='.$days:'') . ($inquiryId>0?'&id='.$inquiryId:'')));
         }
 
         $action = (string) ($_POST['action'] ?? '');
@@ -42,6 +42,7 @@ final class AdminController
                 'save_rotation' => $this->saveRotation(),
                 'delete_rotation' => $this->deleteById('rotation_feeds'),
                 'update_request' => $this->updateRequest(),
+                'update_inquiry_status' => $this->updateInquiryStatus(),
                 'save_settings' => $this->saveSettings(),
                 'change_password' => $this->changePassword(),
                 'save_site_info' => $this->saveSiteInfo(),
@@ -61,8 +62,8 @@ final class AdminController
             View::flash('処理中にエラーが発生しました。入力内容とサーバーログを確認してください。', 'error');
         }
         $siteId = (int) ($_SESSION['admin_site_id'] ?? 0);
-        $report=(string)($_GET['report']??'');$days=(int)($_GET['days']??0);
-        redirect(app_url('admin/?page=' . urlencode((string) ($_GET['page'] ?? 'dashboard')) . ($siteId > 0 ? '&site=' . $siteId : '') . ($report!==''?'&report='.rawurlencode($report):'') . (in_array($days,[7,30,90],true)?'&days='.$days:'')));
+        $pageName=(string)($_GET['page']??'dashboard');$report=(string)($_GET['report']??'');$days=(int)($_GET['days']??0);$inquiryId=$pageName==='inquiries'?(int)($_GET['id']??0):0;
+        redirect(app_url('admin/?page=' . urlencode($pageName) . ($siteId > 0 ? '&site=' . $siteId : '') . ($report!==''?'&report='.rawurlencode($report):'') . (in_array($days,[7,30,90],true)?'&days='.$days:'') . ($inquiryId>0?'&id='.$inquiryId:'')));
     }
 
     private function saveSite(): void
@@ -238,6 +239,15 @@ final class AdminController
         $labels=['new'=>'受付完了','reviewing'=>'確認中','approved'=>'承認','rejected'=>'見送り','registered'=>'登録完了','removed'=>'解除完了'];
         if($request&&$request['notify_email']){$subject='[阿修羅] '.$labels[$status].' - '.$request['receipt_no'];$body=$request['site_name']." 様\n\n相互リンク依頼の状態が「".$labels[$status]."」に更新されました。\n";if($request['public_message'])$body.="\n".$request['public_message']."\n";if($status==='removed'&&$request['removal_reason'])$body.="\n解除理由：".$request['removal_reason']."\n";$from=str_replace(["\r","\n"],'',(string)($this->config['mail']['from']??'noreply@localhost'));@mail($request['email'],$subject,$body,'From: '.$from."\r\nContent-Type: text/plain; charset=UTF-8");}
         if($request&&$request['publish_notice']&&in_array($status,['registered','removed'],true)){$title=$status==='registered'?'相互リンク登録完了':'相互リンク解除完了';$body=$request['site_name'].'：'.$labels[$status];$this->db->prepare('INSERT INTO notices (site_id,title,body,notice_type,is_public) VALUES (?,?,?,?,1)')->execute([$request['target_id'],$title,$body,$status==='registered'?'registered':'removed']);}
+    }
+
+    private function updateInquiryStatus():void
+    {
+        $siteId=$this->contextSiteId();$id=(int)($_POST['id']??0);$status=(string)($_POST['status']??'');
+        if($id<1||!in_array($status,['unread','reviewing','resolved'],true))throw new \InvalidArgumentException('お問い合わせの状態が正しくありません。');
+        $check=$this->db->prepare('SELECT COUNT(*) FROM contact_messages WHERE id=? AND site_id=?');$check->execute([$id,$siteId]);if(!(int)$check->fetchColumn())throw new \InvalidArgumentException('選択中のサイトに、このお問い合わせはありません。');
+        $stmt=$this->db->prepare("UPDATE contact_messages SET status=?,read_at=CASE WHEN ?='unread' THEN NULL ELSE COALESCE(read_at,NOW()) END,resolved_at=CASE WHEN ?='resolved' THEN NOW() ELSE NULL END WHERE id=? AND site_id=?");
+        $stmt->execute([$status,$status,$status,$id,$siteId]);
     }
 
     private function saveSettings(): void

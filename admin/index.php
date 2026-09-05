@@ -78,6 +78,7 @@ $allowed = [
     'search_console',
     'notices',
     'contact',
+    'inquiries',
     'requests',
 ];
 
@@ -129,7 +130,8 @@ $titles = [
     'search_console' => 'Google Search Console',
     'notices' => 'お知らせ',
     'contact' => 'お問い合わせ',
-    'requests' => 'お問い合わせ受信一覧',
+    'inquiries' => 'お問い合わせ受信一覧',
+    'requests' => '相互リンク申請一覧',
 ];
 
 View::header(
@@ -325,6 +327,9 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
 
 } elseif ($page === 'contact') {
     require __DIR__ . '/contact-settings.php';
+
+} elseif ($page === 'inquiries') {
+    require __DIR__ . '/inquiries.php';
 
 } elseif ($page === 'notices') {
     asyura_page_notices($db, $config);

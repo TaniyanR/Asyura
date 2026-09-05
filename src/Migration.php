@@ -348,6 +348,26 @@ final class Migration
                 CONSTRAINT fk_notice_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
                 INDEX idx_notice_public (is_public, starts_at, ends_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS contact_messages (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                site_id BIGINT UNSIGNED NOT NULL,
+                receipt_no VARCHAR(32) NOT NULL UNIQUE,
+                form_nonce_hash CHAR(64) NOT NULL UNIQUE,
+                status ENUM('unread','reviewing','resolved') NOT NULL DEFAULT 'unread',
+                sender_name VARCHAR(255) NOT NULL,
+                sender_email VARCHAR(255) NOT NULL,
+                subject VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                ip_hash CHAR(64) NOT NULL,
+                user_agent VARCHAR(500) NULL,
+                read_at DATETIME NULL,
+                resolved_at DATETIME NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                CONSTRAINT fk_contact_message_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                INDEX idx_contact_message_site_status (site_id,status,created_at),
+                INDEX idx_contact_message_ip_time (site_id,ip_hash,created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS exports (
                 id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                 export_year SMALLINT UNSIGNED NOT NULL,
@@ -468,7 +488,7 @@ final class Migration
         }
 
         $defaults = [
-            'schema_version' => '3',
+            'schema_version' => '4',
             'ranking_period_days' => '3',
             'distribution_window_hours' => '24',
             'raw_retention_days' => '180',
@@ -548,8 +568,31 @@ final class Migration
             }
         }
 
+        if ($version < 4) {
+            $db->exec("CREATE TABLE IF NOT EXISTS contact_messages (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                site_id BIGINT UNSIGNED NOT NULL,
+                receipt_no VARCHAR(32) NOT NULL UNIQUE,
+                form_nonce_hash CHAR(64) NOT NULL UNIQUE,
+                status ENUM('unread','reviewing','resolved') NOT NULL DEFAULT 'unread',
+                sender_name VARCHAR(255) NOT NULL,
+                sender_email VARCHAR(255) NOT NULL,
+                subject VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                ip_hash CHAR(64) NOT NULL,
+                user_agent VARCHAR(500) NULL,
+                read_at DATETIME NULL,
+                resolved_at DATETIME NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                CONSTRAINT fk_contact_message_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                INDEX idx_contact_message_site_status (site_id,status,created_at),
+                INDEX idx_contact_message_ip_time (site_id,ip_hash,created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        }
+
         $stmt = $db->prepare(
-            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','3')
+            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','4')
              ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)"
         );
         $stmt->execute();
