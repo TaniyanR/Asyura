@@ -563,6 +563,60 @@ a {
     font: inherit;
 }
 
+.standalone-field {
+    display: block;
+    max-width: 860px;
+    font-weight: 700;
+}
+
+.standalone-field input,
+.standalone-field textarea {
+    display: block;
+    width: 100%;
+    margin-top: 7px;
+    padding: 10px 12px;
+    border: 1px solid #8c8f94;
+    border-radius: 4px;
+    background: #fff;
+    font: inherit;
+}
+
+.standalone-field input[readonly] {
+    color: #50575e;
+    background: #f6f7f7;
+}
+
+.checks {
+    display: flex;
+    align-items: center;
+    gap: 10px 18px;
+    flex-wrap: wrap;
+}
+
+.checks label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.description {
+    color: var(--muted);
+    line-height: 1.7;
+}
+
+.codebox {
+    width: 100%;
+    margin: 10px 0 12px;
+    padding: 13px 14px;
+    overflow-x: auto;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    background: #f6f7f7;
+    color: #2c3338;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .search-console-form {
     max-width: 860px;
 }
@@ -609,6 +663,60 @@ a {
     background: #2271b1;
     border-color: #2271b1;
     color: #fff;
+}
+
+.button.secondary {
+    border-color: #2271b1;
+    color: #135e96;
+    background: #fff;
+}
+
+.notice-form-grid textarea {
+    min-height: 160px;
+    resize: vertical;
+}
+
+.notice-options,
+.contact-options {
+    margin-top: 18px;
+    padding: 14px;
+    border: 1px solid #dcdcde;
+    border-radius: 5px;
+    background: #f6f7f7;
+}
+
+.contact-panel + .contact-panel {
+    margin-top: 18px;
+}
+
+.contact-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.contact-actions .button {
+    min-width: 170px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.embed-code-section {
+    margin-top: 24px;
+    padding: 17px;
+    border-left: 4px solid #2271b1;
+    border-radius: 4px;
+    background: #f0f6fc;
+}
+
+.embed-code-section h3 {
+    margin: 0 0 5px;
+}
+
+.contact-note {
+    margin: 16px 0 0;
 }
 
 .empty-state {
@@ -888,6 +996,19 @@ body.menu-open {
         align-items: stretch;
         flex-direction: column;
         gap: 12px;
+    }
+
+    .contact-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .contact-actions .button {
+        width: 100%;
+    }
+
+    .embed-code-section {
+        padding: 14px;
     }
 
     .registered-site-actions .button {

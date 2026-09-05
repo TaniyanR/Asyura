@@ -36,10 +36,6 @@ final class View
         $switcherLabel = 'サイト登録';
         if ($currentSite !== null) {
             $switcherLabel = (string) $currentSite['name'];
-        } elseif (count($sites) === 1) {
-            $switcherLabel = (string) $sites[0]['name'];
-        } elseif ($sites !== []) {
-            $switcherLabel = 'サイトを選択';
         }
 
         echo '<!doctype html>';

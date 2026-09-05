@@ -35,6 +35,15 @@ if (!is_file($configFile)) {
 $config = require $configFile;
 date_default_timezone_set($config['timezone'] ?? 'Asia/Tokyo');
 
+// 本番画面へ警告・ファイルパス・スタックトレースを表示しない。
+// 調査が必要な場合だけ config.php の debug を true にする。
+error_reporting(E_ALL);
+if (empty($config['debug'])) {
+    ini_set('display_errors', '0');
+    ini_set('display_startup_errors', '0');
+    ini_set('log_errors', '1');
+}
+
 try {
     $db = \Asyura\Database::connect($config);
     \Asyura\Migration::upgrade($db);
