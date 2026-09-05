@@ -19,7 +19,8 @@ final class AdminController
         if (!Security::verifyCsrf($_POST['csrf_token'] ?? null)) {
             View::flash('画面の有効期限が切れました。もう一度お試しください。', 'error');
             $siteId = (int) ($_SESSION['admin_site_id'] ?? 0);
-            redirect(app_url('admin/?page=' . urlencode((string) ($_GET['page'] ?? 'dashboard')) . ($siteId > 0 ? '&site=' . $siteId : '')));
+            $report=(string)($_GET['report']??'');$days=(int)($_GET['days']??0);
+            redirect(app_url('admin/?page=' . urlencode((string) ($_GET['page'] ?? 'dashboard')) . ($siteId > 0 ? '&site=' . $siteId : '') . ($report!==''?'&report='.rawurlencode($report):'') . (in_array($days,[7,30,90],true)?'&days='.$days:'')));
         }
 
         $action = (string) ($_POST['action'] ?? '');
@@ -60,8 +61,8 @@ final class AdminController
             View::flash('処理中にエラーが発生しました。入力内容とサーバーログを確認してください。', 'error');
         }
         $siteId = (int) ($_SESSION['admin_site_id'] ?? 0);
-        $report=(string)($_GET['report']??'');
-        redirect(app_url('admin/?page=' . urlencode((string) ($_GET['page'] ?? 'dashboard')) . ($siteId > 0 ? '&site=' . $siteId : '') . ($report!==''?'&report='.rawurlencode($report):'')));
+        $report=(string)($_GET['report']??'');$days=(int)($_GET['days']??0);
+        redirect(app_url('admin/?page=' . urlencode((string) ($_GET['page'] ?? 'dashboard')) . ($siteId > 0 ? '&site=' . $siteId : '') . ($report!==''?'&report='.rawurlencode($report):'') . (in_array($days,[7,30,90],true)?'&days='.$days:'')));
     }
 
     private function saveSite(): void

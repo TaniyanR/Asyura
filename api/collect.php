@@ -45,7 +45,7 @@ try {
         throw new TrackingRejectedException('Origin rejected.', 403, 'origin_rejected');
     }
     header('Access-Control-Allow-Origin: ' . $origin);
-    $tracker->enforceRateLimit($site);
+    $tracker->enforceRateLimit($site, $payload);
     $tracker->record($site, $payload);
     http_response_code(202);
     echo json_encode(['ok' => true]);

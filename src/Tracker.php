@@ -27,12 +27,13 @@ final class Tracker
         return false;
     }
 
-    public function enforceRateLimit(array $site):void
+    public function enforceRateLimit(array $site,array $payload):void
     {
-        $hash=$this->requestHash();$window=date('Y-m-d H:i:00');
-        $this->db->prepare('INSERT INTO tracking_rate_limits (site_id,request_hash,window_start,hits) VALUES (?,?,?,1) ON DUPLICATE KEY UPDATE hits=hits+1')->execute([(int)$site['id'],$hash,$window]);
-        $q=$this->db->prepare('SELECT hits FROM tracking_rate_limits WHERE site_id=? AND request_hash=? AND window_start=?');$q->execute([(int)$site['id'],$hash,$window]);
-        if((int)$q->fetchColumn()>120){$this->logSecurity((int)$site['id'],'rate_limit','critical','1分間の計測上限を超えました。',(string)($_SERVER['HTTP_ORIGIN']??''));throw new TrackingRejectedException('Rate limit exceeded.',429,'rate_limit');}
+        $siteId=(int)$site['id'];$key=(string)$this->config['app_key'];
+        $ipBucket=hash_hmac('sha256','ip|'.Security::clientIp(),$key);
+        if($this->incrementRateLimit($siteId,$ipBucket)>600){$this->logSecurity($siteId,'rate_limit','critical','同じ送信元から1分間に600件を超える計測を拒否しました。',(string)($_SERVER['HTTP_ORIGIN']??''));throw new TrackingRejectedException('Rate limit exceeded.',429,'rate_limit');}
+        $visitor=$this->identifier((string)($payload['visitor_id']??''));
+        if($visitor!==''&&$this->incrementRateLimit($siteId,hash_hmac('sha256','visitor|'.$siteId.'|'.$visitor,$key))>120){$this->logSecurity($siteId,'rate_limit','critical','同じ訪問者から1分間に120件を超える計測を拒否しました。',(string)($_SERVER['HTTP_ORIGIN']??''));throw new TrackingRejectedException('Rate limit exceeded.',429,'rate_limit');}
     }
 
     public function logSecurity(?int $siteId,string $code,string $severity,string $details,string $origin=''):void
@@ -90,10 +91,11 @@ final class Tracker
 
     private function recordConversions(int $siteId,string $pageviewId,string $sessionHash,string $visitorHash,string $page):void
     {
-        $q=$this->db->prepare('SELECT id,url_pattern,match_type FROM conversion_rules WHERE site_id=? AND active=1');$q->execute([$siteId]);foreach($q as $r){$p=(string)$r['url_pattern'];$match=match($r['match_type']){'exact'=>$page===$p,'prefix'=>str_starts_with($page,$p),default=>str_contains($page,$p)};if(!$match)continue;$i=$this->db->prepare('INSERT IGNORE INTO conversion_events (site_id,rule_id,pageview_id,session_hash,visitor_hash,page_url) VALUES (?,?,?,?,?,?)');$i->execute([$siteId,(int)$r['id'],$pageviewId,$sessionHash,$visitorHash,$page]);if($i->rowCount()===1)$this->db->prepare('UPDATE analytics_sessions SET conversion_count=conversion_count+1 WHERE site_id=? AND session_hash=?')->execute([$siteId,$sessionHash]);}
+        $path=(string)(parse_url($page,PHP_URL_PATH)?:'/');$targets=array_unique([$page,$path]);$q=$this->db->prepare('SELECT id,url_pattern,match_type FROM conversion_rules WHERE site_id=? AND active=1');$q->execute([$siteId]);foreach($q as $r){$p=(string)$r['url_pattern'];$match=false;foreach($targets as$target){$match=match($r['match_type']){'exact'=>$target===$p,'prefix'=>str_starts_with($target,$p),default=>str_contains($target,$p)};if($match)break;}if(!$match)continue;$i=$this->db->prepare('INSERT IGNORE INTO conversion_events (site_id,rule_id,pageview_id,session_hash,visitor_hash,page_url) VALUES (?,?,?,?,?,?)');$i->execute([$siteId,(int)$r['id'],$pageviewId,$sessionHash,$visitorHash,$page]);if($i->rowCount()===1)$this->db->prepare('UPDATE analytics_sessions SET conversion_count=conversion_count+1 WHERE site_id=? AND session_hash=?')->execute([$siteId,$sessionHash]);}
     }
 
     private function identifier(string $v,int $max=64):string{return strlen($v)>=16&&strlen($v)<=$max&&preg_match('/^[A-Za-z0-9_-]+$/',$v)===1?$v:'';}
+    private function incrementRateLimit(int $siteId,string $hash):int{$window=date('Y-m-d H:i:00');$this->db->prepare('INSERT INTO tracking_rate_limits (site_id,request_hash,window_start,hits) VALUES (?,?,?,1) ON DUPLICATE KEY UPDATE hits=hits+1')->execute([$siteId,$hash,$window]);$q=$this->db->prepare('SELECT hits FROM tracking_rate_limits WHERE site_id=? AND request_hash=? AND window_start=?');$q->execute([$siteId,$hash,$window]);return(int)$q->fetchColumn();}
     private function requestHash():string{return hash_hmac('sha256',Security::clientIp(),(string)$this->config['app_key']);}
     private function isBot(string $ua):bool{return preg_match('/bot|crawler|spider|slurp|headless|preview|facebookexternalhit|bingpreview|curl|wget|python-requests|httpclient|phantomjs|selenium|playwright|puppeteer|scrapy|semrush|ahrefs|mj12bot|bytespider|petalbot/i',$ua)===1;}
     private function channel(string $host):string{if($host==='')return'direct';if(preg_match('/google\.|bing\.|yahoo\.|duckduckgo\.|baidu\.|yandex\./i',$host))return'search';if(preg_match('/(^|\.)(x\.com|twitter\.com|facebook\.com|instagram\.com|tiktok\.com|youtube\.com|line\.me)$/i',$host))return'social';return'referral';}
