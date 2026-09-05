@@ -24,7 +24,7 @@ foreach(['__asyuraTrackerLoaded','sendBeacon','fetch(endpoint','pageview_id','en
 $migration=(string)file_get_contents(dirname(__DIR__).'/src/Migration.php');
 foreach(['uq_event_dedup','analytics_sessions','analytics_pageviews','conversion_rules','tracking_security_events','tracking_rate_limits'] as $needle){if(!str_contains($migration,$needle)){fwrite(STDERR,"FAIL migration missing: {$needle}\n");$failed++;}}
 $adminIndex=(string)file_get_contents(dirname(__DIR__).'/admin/index.php');
-foreach(["'search_console'","'notices'","'contact'","'requests'"] as $needle){if(!str_contains($adminIndex,$needle)){fwrite(STDERR,"FAIL admin route missing: {$needle}\n");$failed++;}}
+foreach(["'search_console'","'notices'","'contact'","'inquiries'","'requests'"] as $needle){if(!str_contains($adminIndex,$needle)){fwrite(STDERR,"FAIL admin route missing: {$needle}\n");$failed++;}}
 $accessReport=(string)file_get_contents(dirname(__DIR__).'/admin/access-report.php');
 foreach(['classified_channel','landing_page','exit_page','NOW()-INTERVAL 30 MINUTE','site_id IS NULL','admin_login_failed'] as $needle){if(!str_contains($accessReport,$needle)){fwrite(STDERR,"FAIL access report missing: {$needle}\n");$failed++;}}
 $auth=(string)file_get_contents(dirname(__DIR__).'/src/Auth.php');
@@ -32,4 +32,9 @@ foreach(['admin_login_failed','admin_login_rate_limit'] as $needle){if(!str_cont
 $trackerPhp=(string)file_get_contents(dirname(__DIR__).'/src/Tracker.php');
 foreach(["'ip|'","'visitor|'",'parse_url($page,PHP_URL_PATH)'] as $needle){if(!str_contains($trackerPhp,$needle)){fwrite(STDERR,"FAIL tracker PHP feature missing: {$needle}\n");$failed++;}}
 foreach(['admin/export.php','admin/delete_year.php'] as $relative){$dataCode=(string)file_get_contents(dirname(__DIR__).'/'.$relative);foreach(['analytics_pageviews','analytics_sessions','conversion_events','tracking_security_events','daily_visitors','daily_referrer_visitors'] as $needle){if(!str_contains($dataCode,$needle)){fwrite(STDERR,"FAIL {$relative} missing data table: {$needle}\n");$failed++;}}}
+$exportCode=(string)file_get_contents(dirname(__DIR__).'/admin/export.php');if(!str_contains($exportCode,'contact_messages')){fwrite(STDERR,"FAIL export missing contact_messages\n");$failed++;}
+$inquiry=(string)file_get_contents(dirname(__DIR__).'/public/inquiry.php');
+foreach(['form_token','website_confirm','tracking_rate_limits','contact_messages','consent','site_id'] as $needle){if(!str_contains($inquiry,$needle)){fwrite(STDERR,"FAIL inquiry protection missing: {$needle}\n");$failed++;}}
+foreach(['contact_messages',"'schema_version' => '4'",'idx_contact_message_site_status'] as $needle){if(!str_contains($migration,$needle)){fwrite(STDERR,"FAIL inquiry migration missing: {$needle}\n");$failed++;}}
+$inquiryAdmin=(string)file_get_contents(dirname(__DIR__).'/admin/inquiries.php');foreach(['unread','reviewing','resolved','WHERE id=? AND site_id=?'] as $needle){if(!str_contains($inquiryAdmin,$needle)){fwrite(STDERR,"FAIL inquiry admin missing: {$needle}\n");$failed++;}}
 if($failed){exit(1);}echo "All tests passed.\n";

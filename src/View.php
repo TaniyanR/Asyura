@@ -234,12 +234,12 @@ final class View
             echo '</div>';
             echo '</details>';
 
-            $siteFeaturesOpen = in_array($active, ['notices','contact','requests'], true);
+            $siteFeaturesOpen = in_array($active, ['notices','contact','inquiries'], true);
             echo '<details class="nav-group" '.($siteFeaturesOpen?'open':'').'>';
             echo '<summary><span class="nav-icon">✦</span><span>サイト機能</span><b>▾</b></summary><div class="nav-children">';
             echo '<a class="nav-child'.($active==='notices'?' active':'').'" href="'.e(app_url('admin/?page=notices'.$siteQuery)).'">› お知らせ</a>';
             echo '<a class="nav-child'.($active==='contact'?' active':'').'" href="'.e(app_url('admin/?page=contact'.$siteQuery)).'">› お問い合わせ</a>';
-            echo '<a class="nav-child'.($active==='requests'?' active':'').'" href="'.e(app_url('admin/?page=requests'.$siteQuery)).'">› お問い合わせ受信一覧</a>';
+            echo '<a class="nav-child'.($active==='inquiries'?' active':'').'" href="'.e(app_url('admin/?page=inquiries'.$siteQuery)).'">› お問い合わせ受信一覧</a>';
             echo '</div></details>';
 
             /*
@@ -249,7 +249,7 @@ final class View
             */
             $linkOpen = in_array(
                 $active,
-                ['links', 'ranking'],
+                ['links', 'ranking', 'requests'],
                 true
             );
 
@@ -276,6 +276,8 @@ final class View
                     )
                 ) . '"
             >› 相互リンクサイト登録</a>';
+
+            echo '<a class="nav-child'.($active==='requests'?' active':'').'" href="'.e(app_url('admin/?page=requests'.$siteQuery)).'">› 相互リンク申請一覧</a>';
 
             echo '<a
                 class="nav-child' . ($active === 'ranking' ? ' active' : '') . '"
