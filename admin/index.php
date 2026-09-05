@@ -298,8 +298,12 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
 |--------------------------------------------------------------------------
 */
 } elseif ($page === 'access') {
-
-    require __DIR__ . '/access-report.php';
+    try {
+        require __DIR__ . '/access-report.php';
+    } catch (Throwable $e) {
+        error_log('[Asyura analytics] ' . $e->getMessage());
+        echo '<div class="notice error"><strong>アクセス解析を表示できませんでした。</strong><br>時間をおいて再読み込みしてください。解消しない場合はサーバーのエラーログを確認してください。</div>';
+    }
 
 /*
 |--------------------------------------------------------------------------

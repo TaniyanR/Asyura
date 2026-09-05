@@ -119,6 +119,7 @@ a {
     max-height: 70vh;
     overflow: auto;
     background: #fff;
+    color: var(--text);
     border: 1px solid #c3c4c7;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
     padding: 6px;
@@ -144,6 +145,10 @@ a {
 .site-choice strong,
 .site-choice small {
     display: block;
+}
+
+.site-choice strong {
+    color: var(--text);
 }
 
 .site-choice small {
@@ -558,6 +563,83 @@ a {
     font: inherit;
 }
 
+.standalone-field {
+    display: block;
+    max-width: 860px;
+    font-weight: 700;
+}
+
+.standalone-field input,
+.standalone-field textarea {
+    display: block;
+    width: 100%;
+    margin-top: 7px;
+    padding: 10px 12px;
+    border: 1px solid #8c8f94;
+    border-radius: 4px;
+    background: #fff;
+    font: inherit;
+}
+
+.standalone-field input[readonly] {
+    color: #50575e;
+    background: #f6f7f7;
+}
+
+.checks {
+    display: flex;
+    align-items: center;
+    gap: 10px 18px;
+    flex-wrap: wrap;
+}
+
+.checks label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.description {
+    color: var(--muted);
+    line-height: 1.7;
+}
+
+.codebox {
+    width: 100%;
+    margin: 10px 0 12px;
+    padding: 13px 14px;
+    overflow-x: auto;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    background: #f6f7f7;
+    color: #2c3338;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.search-console-form {
+    max-width: 860px;
+}
+
+.search-console-panel + .search-console-panel {
+    margin-top: 18px;
+}
+
+.search-console-form input[readonly] {
+    color: #50575e;
+    background: #f6f7f7;
+}
+
+.search-console-table select {
+    width: 100%;
+    min-width: 260px;
+    padding: 8px;
+    border: 1px solid #8c8f94;
+    border-radius: 3px;
+    background: #fff;
+    font: inherit;
+}
+
 .span-2 {
     grid-column: 1 / -1;
 }
@@ -581,6 +663,60 @@ a {
     background: #2271b1;
     border-color: #2271b1;
     color: #fff;
+}
+
+.button.secondary {
+    border-color: #2271b1;
+    color: #135e96;
+    background: #fff;
+}
+
+.notice-form-grid textarea {
+    min-height: 160px;
+    resize: vertical;
+}
+
+.notice-options,
+.contact-options {
+    margin-top: 18px;
+    padding: 14px;
+    border: 1px solid #dcdcde;
+    border-radius: 5px;
+    background: #f6f7f7;
+}
+
+.contact-panel + .contact-panel {
+    margin-top: 18px;
+}
+
+.contact-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.contact-actions .button {
+    min-width: 170px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.embed-code-section {
+    margin-top: 24px;
+    padding: 17px;
+    border-left: 4px solid #2271b1;
+    border-radius: 4px;
+    background: #f0f6fc;
+}
+
+.embed-code-section h3 {
+    margin: 0 0 5px;
+}
+
+.contact-note {
+    margin: 16px 0 0;
 }
 
 .empty-state {
@@ -812,10 +948,67 @@ body.menu-open {
         grid-column: auto;
     }
 
+    .search-console-form .button {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    .search-console-table {
+        min-width: 0;
+    }
+
+    .search-console-table thead {
+        display: none;
+    }
+
+    .search-console-table,
+    .search-console-table tbody,
+    .search-console-table tr,
+    .search-console-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .search-console-table tr {
+        padding: 14px 0;
+        border-bottom: 1px solid #dcdcde;
+    }
+
+    .search-console-table td {
+        padding: 5px 0;
+        border: 0;
+    }
+
+    .search-console-table td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .search-console-table select {
+        min-width: 0;
+    }
+
     .registered-site-card {
         align-items: stretch;
         flex-direction: column;
         gap: 12px;
+    }
+
+    .contact-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .contact-actions .button {
+        width: 100%;
+    }
+
+    .embed-code-section {
+        padding: 14px;
     }
 
     .registered-site-actions .button {
