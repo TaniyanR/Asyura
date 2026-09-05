@@ -21,13 +21,17 @@ final class SiteService
         if ($name === '') {
             throw new \InvalidArgumentException('サイト名を入力してください。');
         }
+        $normalizedUrl = UrlNormalizer::normalize($url);
         $this->db->beginTransaction();
         try {
+            $duplicate = $this->db->prepare('SELECT id FROM sites WHERE normalized_url=? LIMIT 1 FOR UPDATE');
+            $duplicate->execute([$normalizedUrl]);
+            if ($duplicate->fetchColumn() !== false) throw new \InvalidArgumentException('このサイトURLはすでに登録されています。登録済みサイトを編集してください。');
             $stmt = $this->db->prepare('INSERT INTO sites (public_id,site_key,name,url,login_url,github_url,normalized_url,category,description,admin_email,active,ranking_enabled,links_enabled,rss_enabled,rotation_enabled,is_priority,priority_multiplier,is_special,special_points,is_rescue,rescue_min_points,is_excluded,contact_ads_notice,contact_links_notice,contact_custom_enabled,contact_custom_text) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
             $stmt->execute([
                 Security::randomToken(8), Security::randomToken(24), $name, $url,
                 self::optionalUrl($data['login_url'] ?? null, 'ログインURL'), self::githubUrl($data['github_url'] ?? null),
-                UrlNormalizer::normalize($url),
+                $normalizedUrl,
                 Security::cleanText($data['category'] ?? '', 100) ?: null,
                 Security::cleanText($data['description'] ?? '', 2000) ?: null,
                 filter_var($data['admin_email'] ?? '', FILTER_VALIDATE_EMAIL) ?: null,
@@ -58,10 +62,14 @@ final class SiteService
         if ($id < 1 || $url === '' || $name === '') {
             throw new \InvalidArgumentException('サイト名とURLを確認してください。');
         }
+        $normalizedUrl = UrlNormalizer::normalize($url);
+        $current=$this->db->prepare('SELECT normalized_url FROM sites WHERE id=?');$current->execute([$id]);$currentNormalizedUrl=$current->fetchColumn();
+        if($currentNormalizedUrl===false)throw new \InvalidArgumentException('編集するサイトが見つかりません。');
+        if((string)$currentNormalizedUrl!==$normalizedUrl){$duplicate=$this->db->prepare('SELECT id FROM sites WHERE normalized_url=? AND id<>? LIMIT 1');$duplicate->execute([$normalizedUrl,$id]);if($duplicate->fetchColumn()!==false)throw new \InvalidArgumentException('このサイトURLはすでに登録されています。登録済みサイトを編集してください。');}
         $stmt = $this->db->prepare('UPDATE sites SET name=?,url=?,login_url=?,github_url=?,normalized_url=?,category=?,description=?,admin_email=?,active=?,ranking_enabled=?,links_enabled=?,rss_enabled=?,rotation_enabled=?,is_priority=?,priority_multiplier=?,is_special=?,special_points=?,is_rescue=?,rescue_min_points=?,is_excluded=?,contact_ads_notice=?,contact_links_notice=?,contact_custom_enabled=?,contact_custom_text=? WHERE id=?');
         $stmt->execute([
             $name, $url, self::optionalUrl($data['login_url'] ?? null, 'ログインURL'), self::githubUrl($data['github_url'] ?? null),
-            UrlNormalizer::normalize($url), Security::cleanText($data['category'] ?? '', 100) ?: null,
+            $normalizedUrl, Security::cleanText($data['category'] ?? '', 100) ?: null,
             Security::cleanText($data['description'] ?? '', 2000) ?: null,
             filter_var($data['admin_email'] ?? '', FILTER_VALIDATE_EMAIL) ?: null,
             isset($data['active']) ? 1 : 0, isset($data['ranking_enabled']) ? 1 : 0,
