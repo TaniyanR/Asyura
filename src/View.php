@@ -49,7 +49,7 @@ final class View
         echo '<meta name="viewport" content="width=device-width,initial-scale=1">';
         echo '<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">';
         echo '<title>' . e($displayTitle) . ' ‹ 阿修羅</title>';
-        echo '<link rel="stylesheet" href="' . e(app_url('assets/admin-shell.css')) . '">';
+        echo '<link rel="stylesheet" href="' . e(self::assetUrl('assets/admin-shell.css')) . '">';
         echo '</head>';
         echo '<body>';
 
@@ -434,11 +434,22 @@ final class View
         echo '</main>';
 
         echo '<script src="'
-            . e(app_url('assets/admin.js'))
+            . e(self::assetUrl('assets/admin.js'))
             . '"></script>';
 
         echo '</body>';
         echo '</html>';
+    }
+
+    /**
+     * CSS・JavaScript更新後にブラウザの古いキャッシュが残らないURLを返す。
+     */
+    private static function assetUrl(string $relativePath): string
+    {
+        $absolutePath = ASYURA_ROOT . '/' . ltrim($relativePath, '/');
+        $version = is_file($absolutePath) ? (string) filemtime($absolutePath) : '1';
+
+        return app_url($relativePath) . '?v=' . rawurlencode($version);
     }
 
     /*
