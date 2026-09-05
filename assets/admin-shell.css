@@ -99,6 +99,14 @@ a {
     color: #bbb;
 }
 
+.site-switcher-label {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .site-switcher[open] summary {
     background: #303030;
 }
@@ -294,6 +302,10 @@ a {
 }
 
 .sidebar-overlay {
+    display: none;
+}
+
+.sidebar-mobile-head {
     display: none;
 }
 
@@ -583,6 +595,62 @@ body.menu-open {
 }
 
 /* =========================================================
+   登録済みサイト
+========================================================= */
+
+.registered-sites {
+    margin-top: 22px;
+}
+
+.registered-site-list {
+    display: grid;
+    gap: 12px;
+}
+
+.registered-site-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 14px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.registered-site-card:last-child {
+    border-bottom: 0;
+}
+
+.registered-site-main {
+    min-width: 0;
+}
+
+.registered-site-main strong,
+.registered-site-main a {
+    display: block;
+}
+
+.registered-site-main strong {
+    margin-bottom: 4px;
+    font-size: 17px;
+}
+
+.registered-site-main a {
+    color: var(--blue);
+    overflow-wrap: anywhere;
+}
+
+.registered-site-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+}
+
+.registered-sites-empty {
+    margin: 0;
+    color: var(--muted);
+}
+
+/* =========================================================
    スマホ / タブレット
 ========================================================= */
 
@@ -613,12 +681,33 @@ body.menu-open {
 
     .sidebar {
         top: 0;
-        padding-top: var(--bar-h);
+        padding-top: 0;
         width: min(310px, 86vw);
         transform: translateX(-102%);
         transition: transform 0.2s ease;
         z-index: 1200;
         box-shadow: 12px 0 28px rgba(0, 0, 0, 0.35);
+    }
+
+    .sidebar-mobile-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: var(--bar-h);
+        padding: 0 14px;
+        color: #fff;
+        border-bottom: 1px solid #333;
+    }
+
+    .sidebar-mobile-head button {
+        width: 44px;
+        height: 44px;
+        border: 0;
+        background: transparent;
+        color: #fff;
+        font-size: 30px;
+        line-height: 1;
+        cursor: pointer;
     }
 
     .sidebar.is-open {
@@ -666,6 +755,14 @@ body.menu-open {
     .cards {
         grid-template-columns: 1fr;
     }
+
+    .panel-body {
+        overflow-x: auto;
+    }
+
+    .wp-list {
+        min-width: 620px;
+    }
 }
 
 @media (max-width: 560px) {
@@ -676,9 +773,15 @@ body.menu-open {
     }
 
     .site-switcher summary {
-        width: 34vw;
+        width: min(40vw, 190px);
         padding: 0 8px;
         font-size: 12px;
+    }
+
+    .top-logout {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
     }
 
     .content {
@@ -707,5 +810,19 @@ body.menu-open {
 
     .span-2 {
         grid-column: auto;
+    }
+
+    .registered-site-card {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .registered-site-actions .button {
+        flex: 1;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
 }

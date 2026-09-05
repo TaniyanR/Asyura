@@ -31,8 +31,11 @@ final class SimpleSiteService
 
         $rssUrl = self::optionalUrl($data['rss_url'] ?? null, 'サイトRSS');
         $loginUrl = self::optionalUrl($data['login_url'] ?? null, 'ログインURL');
-        $searchConsoleProperty = trim((string)($data['search_console_property'] ?? '')) ?: null;
-        if ($searchConsoleProperty !== null && !str_starts_with($searchConsoleProperty, 'sc-domain:') && !filter_var($searchConsoleProperty, FILTER_VALIDATE_URL)) {
+        $hasSearchConsoleProperty = array_key_exists('search_console_property', $data);
+        $searchConsoleProperty = $hasSearchConsoleProperty
+            ? (trim((string) $data['search_console_property']) ?: null)
+            : null;
+        if ($hasSearchConsoleProperty && $searchConsoleProperty !== null && !str_starts_with($searchConsoleProperty, 'sc-domain:') && !filter_var($searchConsoleProperty, FILTER_VALIDATE_URL)) {
             throw new \InvalidArgumentException('Search Consoleプロパティが正しくありません。');
         }
         $email = trim((string) ($data['admin_email'] ?? ''));
@@ -40,8 +43,13 @@ final class SimpleSiteService
         $description = Security::cleanText($data['description'] ?? '', 2000) ?: null;
 
         if ($id > 0) {
-            $stmt = $this->db->prepare('UPDATE sites SET name=?,url=?,rss_url=?,search_console_property=?,login_url=?,normalized_url=?,description=?,admin_email=? WHERE id=?');
-            $stmt->execute([$name,$url,$rssUrl,$searchConsoleProperty,$loginUrl,UrlNormalizer::normalize($url),$description,$email ?: null,$id]);
+            if ($hasSearchConsoleProperty) {
+                $stmt = $this->db->prepare('UPDATE sites SET name=?,url=?,rss_url=?,search_console_property=?,login_url=?,normalized_url=?,description=?,admin_email=? WHERE id=?');
+                $stmt->execute([$name,$url,$rssUrl,$searchConsoleProperty,$loginUrl,UrlNormalizer::normalize($url),$description,$email ?: null,$id]);
+            } else {
+                $stmt = $this->db->prepare('UPDATE sites SET name=?,url=?,rss_url=?,login_url=?,normalized_url=?,description=?,admin_email=? WHERE id=?');
+                $stmt->execute([$name,$url,$rssUrl,$loginUrl,UrlNormalizer::normalize($url),$description,$email ?: null,$id]);
+            }
             return $id;
         }
 

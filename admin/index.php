@@ -64,6 +64,7 @@ require __DIR__ . '/pages.php';
 $allowed = [
     'dashboard',
     'access',
+    'tracking_tag',
     'links',
     'ranking',
     'site_info',
@@ -109,6 +110,7 @@ $accessTitles = [
 $titles = [
     'dashboard' => 'ダッシュボード',
     'access'    => $accessTitles[$report] ?? $accessTitles['traffic'],
+    'tracking_tag' => '計測タグ',
     'links'     => '相互リンクサイト登録',
     'ranking'   => '逆アクセスランキング',
     'site_info' => 'サイト情報',
@@ -276,6 +278,15 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
 } elseif ($page === 'access') {
 
     require __DIR__ . '/access-report.php';
+
+/*
+|--------------------------------------------------------------------------
+| 計測タグ
+|--------------------------------------------------------------------------
+*/
+} elseif ($page === 'tracking_tag') {
+
+    require __DIR__ . '/tracking-tag.php';
 
 /*
 |--------------------------------------------------------------------------
