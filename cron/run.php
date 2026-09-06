@@ -26,7 +26,6 @@ try{
         ["DELETE FROM rss_distribution_history WHERE calculated_at < NOW()-INTERVAL {$distDays} DAY"],
         ["DELETE FROM rss_distribution_batches WHERE calculated_at < NOW()-INTERVAL {$distDays} DAY"],
         ["DELETE FROM reciprocal_rss_distribution_history WHERE calculated_at < NOW()-INTERVAL {$distDays} DAY"],
-        ["DELETE FROM reciprocal_rss_daily_displays WHERE display_date < CURDATE()-INTERVAL 7 DAY"],
         ["DELETE FROM daily_stats WHERE stat_date < CURDATE()-INTERVAL {$aggDays} DAY"],
         ["DELETE FROM daily_link_stats WHERE stat_date < CURDATE()-INTERVAL {$aggDays} DAY"],
         ["DELETE FROM referrer_stats WHERE stat_date < CURDATE()-INTERVAL {$aggDays} DAY"],

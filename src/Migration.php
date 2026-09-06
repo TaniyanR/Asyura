@@ -329,16 +329,6 @@ final class Migration
                 INDEX idx_reciprocal_dist_batch (target_site_id,batch_id),
                 INDEX idx_reciprocal_dist_time (target_site_id,calculated_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-            "CREATE TABLE IF NOT EXISTS reciprocal_rss_daily_displays (
-                target_site_id BIGINT UNSIGNED NOT NULL,
-                reciprocal_link_id BIGINT UNSIGNED NOT NULL,
-                display_date DATE NOT NULL,
-                displayed_count INT UNSIGNED NOT NULL DEFAULT 0,
-                PRIMARY KEY (target_site_id,reciprocal_link_id,display_date),
-                CONSTRAINT fk_reciprocal_display_target FOREIGN KEY (target_site_id) REFERENCES sites(id) ON DELETE CASCADE,
-                CONSTRAINT fk_reciprocal_display_link FOREIGN KEY (reciprocal_link_id) REFERENCES reciprocal_links(id) ON DELETE CASCADE,
-                INDEX idx_reciprocal_display_date (display_date)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS link_requests (
                 id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                 site_id BIGINT UNSIGNED NOT NULL,
@@ -661,17 +651,6 @@ final class Migration
                 INDEX idx_reciprocal_dist_batch (target_site_id,batch_id),
                 INDEX idx_reciprocal_dist_time (target_site_id,calculated_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-            $db->exec("CREATE TABLE IF NOT EXISTS reciprocal_rss_daily_displays (
-                target_site_id BIGINT UNSIGNED NOT NULL,
-                reciprocal_link_id BIGINT UNSIGNED NOT NULL,
-                display_date DATE NOT NULL,
-                displayed_count INT UNSIGNED NOT NULL DEFAULT 0,
-                PRIMARY KEY (target_site_id,reciprocal_link_id,display_date),
-                CONSTRAINT fk_reciprocal_display_target FOREIGN KEY (target_site_id) REFERENCES sites(id) ON DELETE CASCADE,
-                CONSTRAINT fk_reciprocal_display_link FOREIGN KEY (reciprocal_link_id) REFERENCES reciprocal_links(id) ON DELETE CASCADE,
-                INDEX idx_reciprocal_display_date (display_date)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
             $db->exec("UPDATE reciprocal_links SET allocation_type=CASE
                 WHEN is_excluded=1 THEN 'excluded'
                 WHEN is_rescue=1 THEN 'rescue'

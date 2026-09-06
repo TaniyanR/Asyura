@@ -13,7 +13,21 @@ final class DistributionService
 
     public function calculate(int $targetSiteId): array
     {
+        $rows = $this->buildRows($targetSiteId);
+        $batchId=Security::randomToken(8);$this->db->beginTransaction();
+        try{
+            $this->db->prepare('INSERT INTO rss_distribution_batches (batch_id,target_site_id) VALUES (?,?)')->execute([$batchId,$targetSiteId]);
+            $history=$this->db->prepare('INSERT INTO reciprocal_rss_distribution_history (target_site_id,reciprocal_link_id,batch_id,inbound,multiplier,base_weight,final_percent,allocation_type) VALUES (?,?,?,?,?,?,?,?)');
+            foreach($rows as $row)$history->execute([$targetSiteId,$row['reciprocal_link_id'],$batchId,$row['inbound'],$row['multiplier'],$row['remaining_accesses'],$row['final_percent'],$row['allocation_type']]);
+            $this->db->commit();
+        }catch(\Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}
+        return $rows;
+    }
+
+    private function buildRows(int $targetSiteId): array
+    {
         $hours = max(1, (int) setting('distribution_window_hours', 24));
+        $days = max(1, (int) ceil($hours / 24));
         $stmt = $this->db->prepare("SELECT l.* FROM reciprocal_links l
             WHERE l.site_id=? AND l.status='approved' AND l.reciprocal_rss_enabled=1
               AND l.allocation_type<>'excluded' AND l.rss_url IS NOT NULL AND l.rss_url<>''
@@ -22,13 +36,21 @@ final class DistributionService
         $stmt->execute([$targetSiteId]);
         $inboundStmt = $this->db->prepare("SELECT COUNT(*) FROM raw_events
             WHERE site_id=? AND event_type='pageview' AND is_bot=0 AND is_suspicious=0
-              AND referrer_host=? AND occurred_at>=DATE_SUB(NOW(),INTERVAL ? HOUR)");
+              AND referrer_host=? AND occurred_at>=CURDATE()-INTERVAL ? DAY");
+        $outboundStmt = $this->db->prepare("SELECT COALESCE(SUM(outbound_clicks+widget_clicks),0) FROM daily_link_stats
+            WHERE site_id=? AND target_host=? AND stat_date>=CURDATE()-INTERVAL ? DAY");
+        $totalOutboundStmt = $this->db->prepare("SELECT COALESCE(SUM(outbound_clicks+widget_clicks),0) FROM daily_link_stats
+            WHERE site_id=? AND stat_date>=CURDATE()-INTERVAL ? DAY");
+        $totalOutboundStmt->execute([$targetSiteId, $days - 1]);
+        $totalOutbound = (int) $totalOutboundStmt->fetchColumn();
         $rows = [];
         foreach ($stmt->fetchAll() as $partner) {
             $host = UrlNormalizer::host((string) $partner['partner_url']);
             if ($host === '' || $this->isExcludedReferrer($host)) continue;
-            $inboundStmt->execute([$targetSiteId, $host, $hours]);
+            $inboundStmt->execute([$targetSiteId, $host, $days - 1]);
             $inbound = (int) $inboundStmt->fetchColumn();
+            $outboundStmt->execute([$targetSiteId, $host, $days - 1]);
+            $outbound = (int) $outboundStmt->fetchColumn();
             $type = (string) $partner['allocation_type'];
             $multiplier = match ($type) {
                 'priority_120' => 1.20,
@@ -36,63 +58,48 @@ final class DistributionService
                 'priority_200' => 2.00,
                 default => 1.00,
             };
+            $targetAccesses = match ($type) {
+                'special' => max(1, (int) ceil($totalOutbound * (self::SPECIAL_PERCENT / 100))),
+                'rescue' => $this->rescueQuota((int) $partner['id']),
+                default => (int) ceil($inbound * $multiplier),
+            };
+            if ($type === 'rescue') {
+                $todayOutbound = $this->todayOutbound($targetSiteId, $host);
+                $outbound = $todayOutbound;
+            }
+            $remaining = max(0, $targetAccesses - $outbound);
             $rows[] = [
                 'reciprocal_link_id'=>(int)$partner['id'], 'partner_name'=>(string)$partner['partner_name'],
                 'partner_url'=>(string)$partner['partner_url'], 'allocation_type'=>$type, 'inbound'=>$inbound,
                 'multiplier'=>$multiplier,
-                'base_weight'=>in_array($type, ['special','rescue'], true) ? 0.0 : $inbound * $multiplier,
+                'outbound'=>$outbound, 'target_accesses'=>$targetAccesses, 'remaining_accesses'=>$remaining,
+                'base_weight'=>(float)$remaining,
                 'final_percent'=>0.0,
             ];
         }
-        $specialIndexes=[];$normalTotal=0.0;
-        foreach($rows as $index=>$row){if($row['allocation_type']==='special')$specialIndexes[]=$index;elseif($row['allocation_type']!=='rescue')$normalTotal+=(float)$row['base_weight'];}
-        $specialTotal=min(80.0,count($specialIndexes)*self::SPECIAL_PERCENT);$normalPool=100.0-$specialTotal;
-        foreach($rows as &$row){
-            if($row['allocation_type']==='special')$row['final_percent']=$specialTotal>0?$specialTotal/count($specialIndexes):0.0;
-            elseif($row['allocation_type']==='rescue')$row['final_percent']=0.0;
-            elseif($normalTotal>0)$row['final_percent']=((float)$row['base_weight']/$normalTotal)*$normalPool;
-        }unset($row);
-        $batchId=Security::randomToken(8);$this->db->beginTransaction();
-        try{
-            $this->db->prepare('INSERT INTO rss_distribution_batches (batch_id,target_site_id) VALUES (?,?)')->execute([$batchId,$targetSiteId]);
-            $history=$this->db->prepare('INSERT INTO reciprocal_rss_distribution_history (target_site_id,reciprocal_link_id,batch_id,inbound,multiplier,base_weight,final_percent,allocation_type) VALUES (?,?,?,?,?,?,?,?)');
-            foreach($rows as $row)$history->execute([$targetSiteId,$row['reciprocal_link_id'],$batchId,$row['inbound'],$row['multiplier'],$row['base_weight'],$row['final_percent'],$row['allocation_type']]);
-            $this->db->commit();
-        }catch(\Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}
+        $totalRemaining=array_sum(array_column($rows,'remaining_accesses'));
+        if($totalRemaining>0){foreach($rows as &$row)$row['final_percent']=((float)$row['remaining_accesses']/$totalRemaining)*100;unset($row);}
         return $rows;
     }
 
     public function latest(int $targetSiteId): array
     {
-        $eligible=$this->db->prepare("SELECT COUNT(*) FROM reciprocal_links WHERE site_id=? AND status='approved' AND reciprocal_rss_enabled=1 AND allocation_type<>'excluded' AND rss_url IS NOT NULL AND rss_url<>''");$eligible->execute([$targetSiteId]);
-        if((int)$eligible->fetchColumn()===0)return[];
-        $batch=$this->db->prepare('SELECT batch_id FROM reciprocal_rss_distribution_history WHERE target_site_id=? ORDER BY id DESC LIMIT 1');$batch->execute([$targetSiteId]);$batchId=$batch->fetchColumn();
-        if(!$batchId)return $this->calculate($targetSiteId);
-        $stmt=$this->db->prepare('SELECT h.*,l.partner_name,l.partner_url FROM reciprocal_rss_distribution_history h JOIN reciprocal_links l ON l.id=h.reciprocal_link_id AND l.site_id=h.target_site_id WHERE h.target_site_id=? AND h.batch_id=? ORDER BY h.final_percent DESC,h.inbound DESC');
-        $stmt->execute([$targetSiteId,$batchId]);return $stmt->fetchAll();
+        return $this->buildRows($targetSiteId);
     }
 
     public function chooseItems(int $targetSiteId,int $limit,bool $imageRequired=false,array $allowedFeedIds=[]):array
     {
         $limit=max(1,min(100,$limit));$allowedFeedIds=$this->allowedFeedIds($targetSiteId,$allowedFeedIds);$rows=[];$used=[];
-        foreach($this->rescuePartners($targetSiteId) as $partner){
-            if(count($rows)>=$limit)break;$quota=$this->rescueQuota((int)$partner['id']);$shown=(int)$partner['displayed_count'];
-            while($shown<$quota&&count($rows)<$limit){$item=$this->itemForPartner($targetSiteId,(int)$partner['id'],$imageRequired,$allowedFeedIds,$used);if(!$item||!$this->claimRescueDisplay($targetSiteId,(int)$partner['id'],$quota))break;$rows[]=$item;$used[]=(int)$item['id'];$shown++;}
-        }
-        $weights=array_values(array_filter($this->latest($targetSiteId),static fn(array $row):bool=>(float)$row['final_percent']>0));
+        $weights=array_values(array_filter($this->buildRows($targetSiteId),static fn(array $row):bool=>(int)$row['remaining_accesses']>0));
         while(count($rows)<$limit&&$weights){$partner=$this->weightedPartner($weights);if(!$partner)break;$linkId=(int)$partner['reciprocal_link_id'];$item=$this->itemForPartner($targetSiteId,$linkId,$imageRequired,$allowedFeedIds,$used);if(!$item){$weights=array_values(array_filter($weights,static fn(array $row):bool=>(int)$row['reciprocal_link_id']!==$linkId));continue;}$rows[]=$item;$used[]=(int)$item['id'];}
         return $rows;
     }
 
-    private function rescuePartners(int $targetSiteId):array
-    {
-        $stmt=$this->db->prepare("SELECT l.id,COALESCE(d.displayed_count,0) displayed_count FROM reciprocal_links l JOIN rss_feeds f ON f.reciprocal_link_id=l.id AND f.site_id=l.site_id AND f.active=1 LEFT JOIN reciprocal_rss_daily_displays d ON d.target_site_id=l.site_id AND d.reciprocal_link_id=l.id AND d.display_date=CURDATE() WHERE l.site_id=? AND l.status='approved' AND l.reciprocal_rss_enabled=1 AND l.allocation_type='rescue' ORDER BY COALESCE(d.displayed_count,0),l.id");$stmt->execute([$targetSiteId]);return$stmt->fetchAll();
-    }
     private function rescueQuota(int $linkId):int{return 1+(abs(crc32(date('Y-m-d').'|'.$linkId))%3);}
-    private function claimRescueDisplay(int $targetSiteId,int $linkId,int $quota):bool
+    private function todayOutbound(int $targetSiteId,string $host):int
     {
-        $this->db->prepare('INSERT IGNORE INTO reciprocal_rss_daily_displays (target_site_id,reciprocal_link_id,display_date,displayed_count) VALUES (?,?,CURDATE(),0)')->execute([$targetSiteId,$linkId]);
-        $stmt=$this->db->prepare('UPDATE reciprocal_rss_daily_displays SET displayed_count=displayed_count+1 WHERE target_site_id=? AND reciprocal_link_id=? AND display_date=CURDATE() AND displayed_count<?');$stmt->execute([$targetSiteId,$linkId,$quota]);return$stmt->rowCount()===1;
+        $stmt=$this->db->prepare('SELECT COALESCE(SUM(outbound_clicks+widget_clicks),0) FROM daily_link_stats WHERE site_id=? AND target_host=? AND stat_date=CURDATE()');
+        $stmt->execute([$targetSiteId,$host]);return (int)$stmt->fetchColumn();
     }
     private function itemForPartner(int $targetSiteId,int $linkId,bool $imageRequired,array $feedIds,array $used):?array
     {

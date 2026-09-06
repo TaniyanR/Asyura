@@ -7,13 +7,13 @@ use Asyura\UrlNormalizer;
 function asyura_allocation_labels(): array
 {
     return [
-        'normal'=>['通常 100％','逆アクセス数をそのまま配分計算に使います。'],
-        'priority_120'=>['優遇 120％','逆アクセス数を1.2倍として計算します。'],
-        'priority_150'=>['優遇 150％','逆アクセス数を1.5倍として計算します。'],
-        'priority_200'=>['優遇 200％','逆アクセス数を2倍として計算します。'],
-        'special'=>['特別優遇','逆アクセスがなくても全体の約4％を表示します。'],
-        'rescue'=>['救済','逆アクセスがなくても1日1～3回表示します。'],
-        'excluded'=>['RSS配分から除外','RSSは表示せず、相互リンクだけ利用できます。'],
+        'normal'=>['通常 100％','受けたアクセスと同数の返還アクセスを目標にします。'],
+        'priority_120'=>['優遇 120％','受けたアクセスの1.2倍を返還目標にします。'],
+        'priority_150'=>['優遇 150％','受けたアクセスの1.5倍を返還目標にします。'],
+        'priority_200'=>['優遇 200％','受けたアクセスの2倍を返還目標にします。'],
+        'special'=>['特別優遇','逆アクセス数に関係なく、全送出アクセスの約4％を目標にします。'],
+        'rescue'=>['救済','実際の送出が1日1～3アクセスへ達するまで配分します。'],
+        'excluded'=>['RSS配分から除外','返還アクセスは0件とし、相互リンクだけ利用できます。'],
     ];
 }
 
@@ -37,7 +37,7 @@ function asyura_page_links(PDO $db,array $config):void
     echo '<div class="form-grid"><label>提携サイト名<input name="partner_name" value="'.e((string)$link['partner_name']).'" required></label><label>提携サイトURL<input type="url" name="partner_url" value="'.e((string)$link['partner_url']).'" required></label><label>状態<select name="status">';foreach(['pending'=>'確認中','approved'=>'登録完了','paused'=>'一時停止','rejected'=>'見送り','removed'=>'解除'] as $key=>$label)echo '<option value="'.$key.'"'.($link['status']===$key?' selected':'').'>'.$label.'</option>';echo '</select></label></div>';
     echo '<div class="feature-choice-grid"><label class="feature-choice"><input type="checkbox" name="reciprocal_link_enabled" '.(!empty($link['reciprocal_link_enabled'])?'checked':'').'><span><strong>相互リンクを利用</strong><small>A～Eのリンク枠へ掲載します。</small></span></label><label class="feature-choice"><input type="checkbox" name="reciprocal_rss_enabled" '.(!empty($link['reciprocal_rss_enabled'])?'checked':'').'><span><strong>相互RSSを利用</strong><small>RSS記事を取得して配分対象にします。</small></span></label></div>';
     echo '<label class="standalone-field rss-url-field">RSS URL<input type="url" name="rss_url" value="'.e((string)($link['rss_url']??'')).'" placeholder="https://example.com/feed/"><small>「相互RSSを利用」にチェックした場合は必須です。</small></label>';
-    echo '<fieldset class="allocation-options"><legend>RSSの変換率</legend><p class="description">相手から来たアクセスを、RSS記事の表示割合へ変換する方法を1つ選びます。</p><div class="allocation-radio-grid">';
+    echo '<fieldset class="allocation-options"><legend>RSSの変換率</legend><p class="description">相手から受けたアクセスを、実際に相手へ返すアクセス数へ変換する方法を1つ選びます。表示しただけでは返還済みになりません。</p><div class="allocation-radio-grid">';
     foreach($allocationLabels as $key=>[$label,$description])echo '<label class="allocation-radio"><input type="radio" name="allocation_type" value="'.$key.'"'.(($link['allocation_type']??'normal')===$key?' checked':'').'><span><strong>'.e($label).'</strong><small>'.e($description).'</small></span></label>';
     echo '</div></fieldset><fieldset class="slot-options"><legend>相互リンクの表示場所</legend><div class="checks">';foreach(range('A','E') as $slot)echo '<label><input type="checkbox" name="slots[]" value="'.$slot.'"'.(in_array($slot,explode(',',(string)$link['slots']),true)?' checked':'').'>'.$slot.'に表示</label>';echo '</div></fieldset>';
     echo '<label class="standalone-field">管理用メモ<textarea name="description" rows="4">'.e((string)$link['description']).'</textarea></label><div class="checks"><label><input type="checkbox" name="open_new_tab" '.(!empty($link['open_new_tab'])?'checked':'').'>リンクを新しいタブで開く</label></div><div class="actions"><button class="button primary">'.($edit?'変更を保存':'提携サイトを登録').'</button></div></form></div></div>';
@@ -67,8 +67,8 @@ function asyura_page_rss(PDO $db,array $config):void
     $siteId=asyura_require_current_site();if(!$siteId)return;if(isset($_GET['edit'])){asyura_widget_page($db,'rss','相互RSS');return;}
     echo '<div class="notice info"><strong>相互RSSの流れ：</strong>相互リンクサイト登録でRSS URLと変換率を設定し、ここで表示場所ごとの見た目を整えます。</div>';
     foreach(['IMAGE-'=>['画像RSS','画像がある記事だけを表示します。'],'TEXT-'=>['テキストRSS','記事タイトルを中心に表示します。']] as $prefix=>[$heading,$help]){$q=$db->prepare("SELECT * FROM widgets WHERE site_id=? AND type='rss' AND slot_code LIKE ? ORDER BY slot_code");$q->execute([$siteId,$prefix.'%']);echo '<div class="section-intro"><div><h2>'.$heading.'（最大10か所）</h2><p>'.$help.'HTML・CSS・表示件数・サイズを場所ごとに変更できます。</p></div></div><div class="widget-card-grid">';foreach($q as $widget){$slot=str_replace($prefix,'',$widget['slot_code']);echo '<a class="widget-setting-card" href="'.e(app_url('admin/?page=rss&site='.$siteId.'&edit='.$widget['id'])).'"><span class="slot-badge">'.$slot.'</span><strong>'.e($widget['name']).'</strong><small>'.($widget['enabled']?'表示中':'停止中').'・'.$widget['item_limit'].'件</small><b>デザインを変更 →</b></a>';}echo '</div>';}
-    $distribution=(new DistributionService($db))->latest($siteId);$out=$db->prepare('SELECT target_host,SUM(outbound_clicks+widget_clicks) outbound FROM daily_link_stats WHERE site_id=? AND stat_date>=CURDATE()-INTERVAL 29 DAY GROUP BY target_host');$out->execute([$siteId]);$outMap=[];foreach($out as $row)$outMap[$row['target_host']]=(int)$row['outbound'];$labels=asyura_allocation_labels();
-    echo '<div class="section-intro"><div><h2>現在のRSS配分</h2><p>設定済みサイトだけを対象に、逆アクセスと変換率から表示割合を計算します。</p></div></div><div class="table-wrap"><table class="wp-list responsive-table"><thead><tr><th>提携サイト</th><th>逆アクセス</th><th>設定</th><th>現在の配分率</th><th>送出</th></tr></thead><tbody>';foreach($distribution as $row){$host=UrlNormalizer::host((string)$row['partner_url']);echo '<tr><td data-label="提携サイト"><strong>'.e($row['partner_name']).'</strong></td><td data-label="逆アクセス">'.number_format((int)$row['inbound']).'</td><td data-label="設定">'.e($labels[$row['allocation_type']][0]??$row['allocation_type']).'</td><td data-label="現在の配分率"><strong>'.number_format((float)$row['final_percent'],2).'%</strong></td><td data-label="送出">'.number_format($outMap[$host]??0).'</td></tr>';}if(!$distribution)echo '<tr><td colspan="5" class="empty">相互RSSを利用する提携サイトはまだありません。</td></tr>';echo '</tbody></table></div>';
+    $distribution=(new DistributionService($db))->latest($siteId);$labels=asyura_allocation_labels();
+    echo '<div class="section-intro"><div><h2>現在の返還アクセス状況</h2><p>実際にクリックされ、相手サイトへ送ったアクセスだけを返還済みとして数えます。目標へ達したサイトは次の集計まで配分を停止します。</p></div></div><div class="table-wrap"><table class="wp-list responsive-table"><thead><tr><th>提携サイト</th><th>受けたアクセス</th><th>設定</th><th>返還目標</th><th>返還済み</th><th>残り</th></tr></thead><tbody>';foreach($distribution as $row){echo '<tr><td data-label="提携サイト"><strong>'.e($row['partner_name']).'</strong></td><td data-label="受けたアクセス">'.number_format((int)$row['inbound']).'</td><td data-label="設定">'.e($labels[$row['allocation_type']][0]??$row['allocation_type']).'</td><td data-label="返還目標"><strong>'.number_format((int)$row['target_accesses']).'</strong></td><td data-label="返還済み">'.number_format((int)$row['outbound']).'</td><td data-label="残り"><strong>'.number_format((int)$row['remaining_accesses']).'</strong></td></tr>';}if(!$distribution)echo '<tr><td colspan="6" class="empty">相互RSSを利用する提携サイトはまだありません。</td></tr>';echo '</tbody></table></div>';
 }
 
 function asyura_page_notices(PDO $db,array $config):void

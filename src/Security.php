@@ -67,6 +67,11 @@ final class Security
         return hash_hmac('sha256', self::clientIp() . '|' . $scope, $appKey);
     }
 
+    public static function isBotUserAgent(string $userAgent): bool
+    {
+        return preg_match('/bot|crawler|spider|slurp|headless|preview|facebookexternalhit|bingpreview|curl|wget|python-requests|httpclient|phantomjs|selenium|playwright|puppeteer|scrapy|semrush|ahrefs|mj12bot|bytespider|petalbot/i', $userAgent) === 1;
+    }
+
     public static function cleanText(?string $value, int $max = 255): string
     {
         $value = trim(strip_tags((string) $value));
