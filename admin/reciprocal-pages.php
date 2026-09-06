@@ -1,0 +1,80 @@
+<?php
+declare(strict_types=1);
+
+use Asyura\DistributionService;
+use Asyura\UrlNormalizer;
+
+function asyura_allocation_labels(): array
+{
+    return [
+        'normal'=>['通常 100％','逆アクセス数をそのまま配分計算に使います。'],
+        'priority_120'=>['優遇 120％','逆アクセス数を1.2倍として計算します。'],
+        'priority_150'=>['優遇 150％','逆アクセス数を1.5倍として計算します。'],
+        'priority_200'=>['優遇 200％','逆アクセス数を2倍として計算します。'],
+        'special'=>['特別優遇','逆アクセスがなくても全体の約4％を表示します。'],
+        'rescue'=>['救済','逆アクセスがなくても1日1～3回表示します。'],
+        'excluded'=>['RSS配分から除外','RSSは表示せず、相互リンクだけ利用できます。'],
+    ];
+}
+
+function asyura_referrer_is_excluded(PDO $db,string $host):bool
+{
+    foreach($db->query('SELECT pattern,match_type FROM excluded_referrers WHERE active=1') as $rule){$pattern=mb_strtolower((string)$rule['pattern']);$candidate=mb_strtolower($host);$matched=match($rule['match_type']){'exact'=>$candidate===$pattern,'contains'=>str_contains($candidate,$pattern),default=>$candidate===$pattern||str_ends_with($candidate,'.'.$pattern)};if($matched)return true;}return false;
+}
+
+function asyura_page_links(PDO $db,array $config):void
+{
+    $siteId=asyura_require_current_site();if(!$siteId)return;
+    if(isset($_GET['widgets'])){asyura_widget_page($db,'links','相互リンク');return;}
+    $edit=(int)($_GET['edit']??0);
+    $prefillUrl=(string)($_GET['partner_url']??'');$prefillHost=UrlNormalizer::host($prefillUrl);
+    $link=['id'=>0,'partner_name'=>$prefillHost,'partner_url'=>$prefillUrl,'description'=>'','slots'=>'A','status'=>'pending','open_new_tab'=>1,'reciprocal_link_enabled'=>1,'reciprocal_rss_enabled'=>0,'rss_url'=>'','allocation_type'=>'normal'];
+    if($edit){$q=$db->prepare('SELECT * FROM reciprocal_links WHERE id=? AND site_id=?');$q->execute([$edit,$siteId]);$link=$q->fetch()?:$link;}
+    $allocationLabels=asyura_allocation_labels();
+
+    echo '<div class="page-actions reciprocal-page-actions"><a class="button" href="'.e(app_url('admin/?page=links&site='.$siteId.'&widgets=1')).'">相互リンク A～Eの表示デザイン</a><a class="button" href="'.e(app_url('admin/?page=rss&site='.$siteId)).'">画像・テキストRSSの設定</a></div>';
+    echo '<div class="panel reciprocal-form-panel"><h2>'.($edit?'提携サイトを編集':'提携サイトを登録').'</h2><div class="panel-body"><p class="description">相互リンクだけ、相互RSSだけ、または両方をサイトごとに設定できます。</p><form method="post"><input type="hidden" name="action" value="save_link"><input type="hidden" name="id" value="'.(int)$link['id'].'">'.asyura_context_field().csrf_field();
+    echo '<div class="form-grid"><label>提携サイト名<input name="partner_name" value="'.e((string)$link['partner_name']).'" required></label><label>提携サイトURL<input type="url" name="partner_url" value="'.e((string)$link['partner_url']).'" required></label><label>状態<select name="status">';foreach(['pending'=>'確認中','approved'=>'登録完了','paused'=>'一時停止','rejected'=>'見送り','removed'=>'解除'] as $key=>$label)echo '<option value="'.$key.'"'.($link['status']===$key?' selected':'').'>'.$label.'</option>';echo '</select></label></div>';
+    echo '<div class="feature-choice-grid"><label class="feature-choice"><input type="checkbox" name="reciprocal_link_enabled" '.(!empty($link['reciprocal_link_enabled'])?'checked':'').'><span><strong>相互リンクを利用</strong><small>A～Eのリンク枠へ掲載します。</small></span></label><label class="feature-choice"><input type="checkbox" name="reciprocal_rss_enabled" '.(!empty($link['reciprocal_rss_enabled'])?'checked':'').'><span><strong>相互RSSを利用</strong><small>RSS記事を取得して配分対象にします。</small></span></label></div>';
+    echo '<label class="standalone-field rss-url-field">RSS URL<input type="url" name="rss_url" value="'.e((string)($link['rss_url']??'')).'" placeholder="https://example.com/feed/"><small>「相互RSSを利用」にチェックした場合は必須です。</small></label>';
+    echo '<fieldset class="allocation-options"><legend>RSSの変換率</legend><p class="description">相手から来たアクセスを、RSS記事の表示割合へ変換する方法を1つ選びます。</p><div class="allocation-radio-grid">';
+    foreach($allocationLabels as $key=>[$label,$description])echo '<label class="allocation-radio"><input type="radio" name="allocation_type" value="'.$key.'"'.(($link['allocation_type']??'normal')===$key?' checked':'').'><span><strong>'.e($label).'</strong><small>'.e($description).'</small></span></label>';
+    echo '</div></fieldset><fieldset class="slot-options"><legend>相互リンクの表示場所</legend><div class="checks">';foreach(range('A','E') as $slot)echo '<label><input type="checkbox" name="slots[]" value="'.$slot.'"'.(in_array($slot,explode(',',(string)$link['slots']),true)?' checked':'').'>'.$slot.'に表示</label>';echo '</div></fieldset>';
+    echo '<label class="standalone-field">管理用メモ<textarea name="description" rows="4">'.e((string)$link['description']).'</textarea></label><div class="checks"><label><input type="checkbox" name="open_new_tab" '.(!empty($link['open_new_tab'])?'checked':'').'>リンクを新しいタブで開く</label></div><div class="actions"><button class="button primary">'.($edit?'変更を保存':'提携サイトを登録').'</button></div></form></div></div>';
+
+    $rowsStmt=$db->prepare('SELECT * FROM reciprocal_links WHERE site_id=? ORDER BY id DESC');$rowsStmt->execute([$siteId]);$rows=$rowsStmt->fetchAll();
+    echo '<div class="section-intro"><div><h2>登録済みの提携サイト</h2><p>このサイトに設定した相互リンク・相互RSSだけを表示しています。</p></div><span class="count-badge">'.count($rows).'件</span></div><div class="table-wrap"><table class="wp-list responsive-table"><thead><tr><th>提携サイト</th><th>利用機能</th><th>RSS配分</th><th>状態</th><th>操作</th></tr></thead><tbody>';
+    foreach($rows as $row){$allocation=$allocationLabels[$row['allocation_type']??'normal'][0]??'通常 100％';$features=[];if(!empty($row['reciprocal_link_enabled']))$features[]='相互リンク';if(!empty($row['reciprocal_rss_enabled']))$features[]='相互RSS';echo '<tr><td data-label="提携サイト"><strong>'.e($row['partner_name']).'</strong><br><small>'.e($row['partner_url']).'</small></td><td data-label="利用機能">'.e($features?implode('・',$features):'停止中').'</td><td data-label="RSS配分">'.e($allocation).'</td><td data-label="状態"><span class="badge '.($row['status']==='approved'?'active':'').'">'.e(['pending'=>'確認中','approved'=>'登録完了','paused'=>'一時停止','rejected'=>'見送り','removed'=>'解除'][$row['status']]??$row['status']).'</span></td><td data-label="操作"><a class="button" href="'.e(app_url('admin/?page=links&site='.$siteId.'&edit='.$row['id'])).'">編集</a></td></tr>';}
+    if(!$rows)echo '<tr><td colspan="5" class="empty">提携サイトはまだ登録されていません。</td></tr>';echo '</tbody></table></div>';
+
+    $ref=$db->prepare('SELECT referrer_host,SUM(inbound) inbound,MAX(stat_date) last_date FROM referrer_stats WHERE site_id=? AND referrer_host IS NOT NULL AND referrer_host<>\'\' GROUP BY referrer_host ORDER BY inbound DESC LIMIT 200');$ref->execute([$siteId]);$registered=[];foreach($rows as $row)$registered[UrlNormalizer::host((string)$row['partner_url'])]=true;$selfHost=UrlNormalizer::host((string)asyura_current_site()['url']);$unknown=[];foreach($ref as $row){$host=(string)$row['referrer_host'];if($host===$selfHost||isset($registered[$host])||asyura_referrer_is_excluded($db,$host))continue;$unknown[]=$row;}
+    echo '<div class="section-intro"><div><h2>相互設定していないサイト</h2><p>アクセスが来ていても、登録するまではRSSアクセスを返しません。</p></div><span class="count-badge">'.count($unknown).'件</span></div><div class="table-wrap"><table class="wp-list responsive-table"><thead><tr><th>アクセス元</th><th>逆アクセス</th><th>最終確認日</th><th>操作</th></tr></thead><tbody>';foreach($unknown as $row){$url='https://'.$row['referrer_host'].'/';echo '<tr><td data-label="アクセス元"><strong>'.e($row['referrer_host']).'</strong></td><td data-label="逆アクセス">'.number_format((int)$row['inbound']).'</td><td data-label="最終確認日">'.e($row['last_date']).'</td><td data-label="操作"><a class="button primary" href="'.e(app_url('admin/?page=links&site='.$siteId.'&partner_url='.rawurlencode($url))).'">このサイトを設定</a></td></tr>';}if(!$unknown)echo '<tr><td colspan="4" class="empty">未設定のアクセス元はありません。</td></tr>';echo '</tbody></table></div>';
+}
+
+function asyura_page_ranking(PDO $db,array $config):void
+{
+    $siteId=asyura_require_current_site();if(!$siteId)return;if(isset($_GET['widgets'])||isset($_GET['edit'])){asyura_widget_page($db,'ranking','逆アクセスランキング');return;}
+    $days=in_array((int)($_GET['days']??30),[7,30,90],true)?(int)$_GET['days']:30;$filter=in_array($_GET['mutual']??'all',['all','yes','no'],true)?(string)$_GET['mutual']:'all';
+    echo '<div class="filter-bar"><strong>表示期間</strong>';foreach([7,30,90] as $value)echo '<a class="button '.($days===$value?'primary':'').'" href="'.e(app_url('admin/?page=ranking&site='.$siteId.'&days='.$value.'&mutual='.$filter)).'">'.$value.'日</a>';echo '<span class="filter-divider"></span><strong>相互設定</strong>';foreach(['all'=>'すべて','yes'=>'あり','no'=>'なし'] as $key=>$label)echo '<a class="button '.($filter===$key?'primary':'').'" href="'.e(app_url('admin/?page=ranking&site='.$siteId.'&days='.$days.'&mutual='.$key)).'">'.$label.'</a>';echo '<a class="button" href="'.e(app_url('admin/?page=ranking&site='.$siteId.'&widgets=1')).'">ランキング表示デザイン</a></div>';
+    $links=$db->prepare('SELECT * FROM reciprocal_links WHERE site_id=?');$links->execute([$siteId]);$linkMap=[];foreach($links as $link)$linkMap[UrlNormalizer::host((string)$link['partner_url'])]=$link;
+    $out=$db->prepare('SELECT target_host,SUM(outbound_clicks+widget_clicks) outbound FROM daily_link_stats WHERE site_id=? AND stat_date>=CURDATE()-INTERVAL ? DAY GROUP BY target_host');$out->execute([$siteId,max(0,$days-1)]);$outMap=[];foreach($out as $row)$outMap[$row['target_host']]=(int)$row['outbound'];
+    $rank=$db->prepare('SELECT referrer_host,SUM(inbound) inbound,SUM(unique_inbound) unique_inbound FROM referrer_stats WHERE site_id=? AND stat_date>=CURDATE()-INTERVAL ? DAY GROUP BY referrer_host ORDER BY inbound DESC');$rank->execute([$siteId,max(0,$days-1)]);$rows=[];$selfHost=UrlNormalizer::host((string)asyura_current_site()['url']);foreach($rank as $row){$host=(string)$row['referrer_host'];if($host===$selfHost||asyura_referrer_is_excluded($db,$host))continue;$configured=isset($linkMap[$host]);if(($filter==='yes'&&!$configured)||($filter==='no'&&$configured))continue;$row['configured']=$configured;$row['link']=$linkMap[$host]??null;$row['outbound']=$outMap[$host]??0;$rows[]=$row;}
+    echo '<div class="notice info"><strong>見方：</strong>「相互設定なし」のサイトには、逆アクセスがあってもRSSアクセスを返しません。</div><div class="table-wrap"><table class="wp-list responsive-table"><thead><tr><th>順位</th><th>サイト</th><th>逆アクセス</th><th>UU</th><th>送出</th><th>相互設定</th><th>RSS変換率</th></tr></thead><tbody>';$position=0;$labels=asyura_allocation_labels();foreach($rows as $row){$position++;$link=$row['link'];$allocation=$link?($labels[$link['allocation_type']??'normal'][0]??'通常 100％'):'―';echo '<tr><td data-label="順位">'.$position.'</td><td data-label="サイト"><strong>'.e($link['partner_name']??$row['referrer_host']).'</strong><br><small>'.e($row['referrer_host']).'</small></td><td data-label="逆アクセス">'.number_format((int)$row['inbound']).'</td><td data-label="UU">'.number_format((int)$row['unique_inbound']).'</td><td data-label="送出">'.number_format((int)$row['outbound']).'</td><td data-label="相互設定"><span class="badge '.($row['configured']?'active':'').'">'.($row['configured']?'あり':'なし').'</span></td><td data-label="RSS変換率">'.e($allocation).'</td></tr>';}if(!$rows)echo '<tr><td colspan="7" class="empty">該当する逆アクセスはありません。</td></tr>';echo '</tbody></table></div>';
+}
+
+function asyura_page_rss(PDO $db,array $config):void
+{
+    $siteId=asyura_require_current_site();if(!$siteId)return;if(isset($_GET['edit'])){asyura_widget_page($db,'rss','相互RSS');return;}
+    echo '<div class="notice info"><strong>相互RSSの流れ：</strong>相互リンクサイト登録でRSS URLと変換率を設定し、ここで表示場所ごとの見た目を整えます。</div>';
+    foreach(['IMAGE-'=>['画像RSS','画像がある記事だけを表示します。'],'TEXT-'=>['テキストRSS','記事タイトルを中心に表示します。']] as $prefix=>[$heading,$help]){$q=$db->prepare("SELECT * FROM widgets WHERE site_id=? AND type='rss' AND slot_code LIKE ? ORDER BY slot_code");$q->execute([$siteId,$prefix.'%']);echo '<div class="section-intro"><div><h2>'.$heading.'（最大10か所）</h2><p>'.$help.'HTML・CSS・表示件数・サイズを場所ごとに変更できます。</p></div></div><div class="widget-card-grid">';foreach($q as $widget){$slot=str_replace($prefix,'',$widget['slot_code']);echo '<a class="widget-setting-card" href="'.e(app_url('admin/?page=rss&site='.$siteId.'&edit='.$widget['id'])).'"><span class="slot-badge">'.$slot.'</span><strong>'.e($widget['name']).'</strong><small>'.($widget['enabled']?'表示中':'停止中').'・'.$widget['item_limit'].'件</small><b>デザインを変更 →</b></a>';}echo '</div>';}
+    $distribution=(new DistributionService($db))->latest($siteId);$out=$db->prepare('SELECT target_host,SUM(outbound_clicks+widget_clicks) outbound FROM daily_link_stats WHERE site_id=? AND stat_date>=CURDATE()-INTERVAL 29 DAY GROUP BY target_host');$out->execute([$siteId]);$outMap=[];foreach($out as $row)$outMap[$row['target_host']]=(int)$row['outbound'];$labels=asyura_allocation_labels();
+    echo '<div class="section-intro"><div><h2>現在のRSS配分</h2><p>設定済みサイトだけを対象に、逆アクセスと変換率から表示割合を計算します。</p></div></div><div class="table-wrap"><table class="wp-list responsive-table"><thead><tr><th>提携サイト</th><th>逆アクセス</th><th>設定</th><th>現在の配分率</th><th>送出</th></tr></thead><tbody>';foreach($distribution as $row){$host=UrlNormalizer::host((string)$row['partner_url']);echo '<tr><td data-label="提携サイト"><strong>'.e($row['partner_name']).'</strong></td><td data-label="逆アクセス">'.number_format((int)$row['inbound']).'</td><td data-label="設定">'.e($labels[$row['allocation_type']][0]??$row['allocation_type']).'</td><td data-label="現在の配分率"><strong>'.number_format((float)$row['final_percent'],2).'%</strong></td><td data-label="送出">'.number_format($outMap[$host]??0).'</td></tr>';}if(!$distribution)echo '<tr><td colspan="5" class="empty">相互RSSを利用する提携サイトはまだありません。</td></tr>';echo '</tbody></table></div>';
+}
+
+function asyura_page_notices(PDO $db,array $config):void
+{
+    $siteId=asyura_require_current_site();if(!$siteId)return;
+    echo '<div class="notice info"><strong>このお知らせは自動で作成されます。</strong><br>相互リンクの状態を「登録完了」または「解除」に変更すると、対象サイトのお知らせへ追加されます。</div><div class="notice-template-grid"><div class="notice-template-card success"><span>登録完了のひな型</span><h3>相互リンク登録完了</h3><p>○○様との相互リンク登録が完了しました。</p></div><div class="notice-template-card removed"><span>解除時のひな型</span><h3>相互リンク解除のお知らせ</h3><p>○○様との相互リンクを解除しました。</p></div></div>';
+    $rowsStmt=$db->prepare('SELECT * FROM notices WHERE site_id=? OR site_id IS NULL ORDER BY is_pinned DESC,id DESC');$rowsStmt->execute([$siteId]);$rows=$rowsStmt->fetchAll();echo '<div class="section-intro"><div><h2>自動お知らせ履歴</h2><p>既存のお知らせも削除せず、そのまま確認できます。</p></div><span class="count-badge">'.count($rows).'件</span></div><div class="table-wrap"><table class="wp-list responsive-table"><thead><tr><th>お知らせ</th><th>種類</th><th>公開</th><th>作成日</th><th></th></tr></thead><tbody>';foreach($rows as $row)echo '<tr><td data-label="お知らせ"><strong>'.e($row['title']).'</strong><br><small>'.e($row['body']).'</small></td><td data-label="種類">'.e(['registered'=>'登録完了','removed'=>'解除','normal'=>'通常','important'=>'重要','maintenance'=>'メンテナンス'][$row['notice_type']]??$row['notice_type']).'</td><td data-label="公開">'.($row['is_public']?'公開中':'管理画面のみ').'</td><td data-label="作成日">'.e($row['created_at']).'</td><td><form method="post" data-confirm="この履歴を削除しますか？"><input type="hidden" name="action" value="delete_notice"><input type="hidden" name="id" value="'.(int)$row['id'].'">'.asyura_context_field().csrf_field().'<button class="button danger">削除</button></form></td></tr>';if(!$rows)echo '<tr><td colspan="5" class="empty">お知らせはまだありません。</td></tr>';echo '</tbody></table></div>';
+    $widget=$db->prepare("SELECT * FROM widgets WHERE type='notices' AND site_id=? ORDER BY slot_code LIMIT 1");$widget->execute([$siteId]);$w=$widget->fetch();if($w){$tag='<iframe src="'.app_url('widgets/notices.php?id='.$w['public_id']).'" loading="lazy" style="width:'.$w['width'].';height:'.$w['height'].';border:0"></iframe>';echo '<div class="panel embed-code-section"><h2>サイトへの設置タグ</h2><div class="panel-body"><p class="description">お知らせを表示したい場所へ、このタグを貼り付けます。</p><pre class="codebox" id="notice-tag">'.e($tag).'</pre><button type="button" class="button" data-copy="#notice-tag">タグをコピー</button></div></div>';}
+}

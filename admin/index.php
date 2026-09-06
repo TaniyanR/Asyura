@@ -83,6 +83,7 @@ $allowed = [
     'contact',
     'inquiries',
     'requests',
+    'rss',
 ];
 
 if (!in_array($page, $allowed, true)) {
@@ -135,6 +136,7 @@ $titles = [
     'contact' => 'お問い合わせ',
     'inquiries' => 'お問い合わせ受信一覧',
     'requests' => '相互リンク申請一覧',
+    'rss' => '相互RSS設定',
 ];
 
 View::header(
