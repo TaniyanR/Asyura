@@ -69,7 +69,7 @@ final class Security
 
     public static function isBotUserAgent(string $userAgent): bool
     {
-        return preg_match('/bot|crawler|spider|slurp|headless|preview|facebookexternalhit|bingpreview|curl|wget|python-requests|httpclient|phantomjs|selenium|playwright|puppeteer|scrapy|semrush|ahrefs|mj12bot|bytespider|petalbot/i', $userAgent) === 1;
+        return TrafficClassifier::isBot($userAgent);
     }
 
     public static function cleanText(?string $value, int $max = 255): string
