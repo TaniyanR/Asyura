@@ -149,25 +149,69 @@ final class AdminController
         if ($url === '') {
             throw new \InvalidArgumentException('相互リンク先URLが正しくありません。');
         }
+        $name = Security::cleanText($_POST['partner_name'] ?? '', 255);
+        if ($name === '') {
+            throw new \InvalidArgumentException('提携サイト名を入力してください。');
+        }
+        $rssEnabled = isset($_POST['reciprocal_rss_enabled']);
+        $rssUrl = Security::safeUrl($_POST['rss_url'] ?? '');
+        if ($rssEnabled && $rssUrl === '') {
+            throw new \InvalidArgumentException('相互RSSを利用する場合は、RSS URLを入力してください。');
+        }
+        $allocationTypes = ['normal','priority_120','priority_150','priority_200','special','rescue','excluded'];
+        $allocationType = in_array($_POST['allocation_type'] ?? '', $allocationTypes, true) ? (string) $_POST['allocation_type'] : 'normal';
         $slots = array_values(array_intersect((array) ($_POST['slots'] ?? []), range('A', 'E')));
         $id = (int) ($_POST['id'] ?? 0);
-        $values = [
-            $this->contextSiteId(), Security::cleanText($_POST['partner_name'] ?? '', 255), $url,
-            UrlNormalizer::normalize($url), Security::cleanText($_POST['description'] ?? '', 2000) ?: null,
-            Security::cleanText($_POST['category'] ?? '', 100) ?: null, implode(',', $slots),
-            in_array($_POST['status'] ?? '', ['pending','approved','paused','rejected','removed'], true) ? $_POST['status'] : 'pending',
-            in_array($_POST['rel_type'] ?? '', ['follow','nofollow','sponsored','ugc'], true) ? $_POST['rel_type'] : 'follow',
-            isset($_POST['open_new_tab']) ? 1 : 0, isset($_POST['is_priority']) ? 1 : 0,
-            isset($_POST['is_special']) ? 1 : 0, isset($_POST['is_rescue']) ? 1 : 0, isset($_POST['is_excluded']) ? 1 : 0,
-        ];
+        $old = null;
         if ($id > 0) {
-            $stmt = $this->db->prepare('UPDATE reciprocal_links SET site_id=?,partner_name=?,partner_url=?,normalized_url=?,description=?,category=?,slots=?,status=?,rel_type=?,open_new_tab=?,is_priority=?,is_special=?,is_rescue=?,is_excluded=? WHERE id=? AND site_id=?');
-            $values[] = $id;
-            $values[] = $this->contextSiteId();
-        } else {
-            $stmt = $this->db->prepare('INSERT INTO reciprocal_links (site_id,partner_name,partner_url,normalized_url,description,category,slots,status,rel_type,open_new_tab,is_priority,is_special,is_rescue,is_excluded) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+            $oldStmt = $this->db->prepare('SELECT * FROM reciprocal_links WHERE id=? AND site_id=?');
+            $oldStmt->execute([$id, $this->contextSiteId()]);
+            $old = $oldStmt->fetch();
+            if (!$old) throw new \InvalidArgumentException('選択中のサイトに、この提携サイトはありません。');
         }
-        $stmt->execute($values);
+        $status = in_array($_POST['status'] ?? '', ['pending','approved','paused','rejected','removed'], true) ? (string) $_POST['status'] : 'pending';
+        $legacyPriority = str_starts_with($allocationType, 'priority_') ? 1 : 0;
+        $values = [
+            $this->contextSiteId(), $name, $url,
+            UrlNormalizer::normalize($url), Security::cleanText($_POST['description'] ?? '', 2000) ?: null,
+            $old['category'] ?? null, implode(',', $slots), $status, $old['rel_type'] ?? 'follow',
+            isset($_POST['open_new_tab']) ? 1 : 0, $legacyPriority,
+            $allocationType === 'special' ? 1 : 0, $allocationType === 'rescue' ? 1 : 0, $allocationType === 'excluded' ? 1 : 0,
+            isset($_POST['reciprocal_link_enabled']) ? 1 : 0, $rssEnabled ? 1 : 0, $rssUrl ?: null, $allocationType,
+        ];
+        $this->db->beginTransaction();
+        try {
+            if ($id > 0) {
+                $stmt = $this->db->prepare('UPDATE reciprocal_links SET site_id=?,partner_name=?,partner_url=?,normalized_url=?,description=?,category=?,slots=?,status=?,rel_type=?,open_new_tab=?,is_priority=?,is_special=?,is_rescue=?,is_excluded=?,reciprocal_link_enabled=?,reciprocal_rss_enabled=?,rss_url=?,allocation_type=? WHERE id=? AND site_id=?');
+                $values[] = $id; $values[] = $this->contextSiteId();
+            } else {
+                $duplicate=$this->db->prepare('SELECT COUNT(*) FROM reciprocal_links WHERE site_id=? AND normalized_url=?');$duplicate->execute([$this->contextSiteId(),UrlNormalizer::normalize($url)]);
+                if((int)$duplicate->fetchColumn()>0)throw new \InvalidArgumentException('この提携サイトはすでに登録されています。');
+                $stmt = $this->db->prepare('INSERT INTO reciprocal_links (site_id,partner_name,partner_url,normalized_url,description,category,slots,status,rel_type,open_new_tab,is_priority,is_special,is_rescue,is_excluded,reciprocal_link_enabled,reciprocal_rss_enabled,rss_url,allocation_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+            }
+            $stmt->execute($values);
+            if ($id === 0) $id = (int) $this->db->lastInsertId();
+            if ($rssEnabled) {
+                $feed=$this->db->prepare('INSERT INTO rss_feeds (site_id,reciprocal_link_id,name,feed_url,active) VALUES (?,?,?,?,1) ON DUPLICATE KEY UPDATE site_id=VALUES(site_id),name=VALUES(name),feed_url=VALUES(feed_url),active=1');
+                $feed->execute([$this->contextSiteId(),$id,$name,$rssUrl]);
+            } else {
+                $this->db->prepare('UPDATE rss_feeds SET active=0 WHERE reciprocal_link_id=? AND site_id=?')->execute([$id,$this->contextSiteId()]);
+            }
+            $oldStatus=(string)($old['status']??'');
+            if($status!==$oldStatus&&in_array($status,['approved','removed'],true))$this->createLinkNotice($this->contextSiteId(),$name,$status);
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    private function createLinkNotice(int $siteId,string $partnerName,string $status):void
+    {
+        $registered=$status==='approved'||$status==='registered';
+        $title=$registered?'相互リンク登録完了':'相互リンク解除のお知らせ';
+        $body=$registered?$partnerName.'様との相互リンク登録が完了しました。':$partnerName.'様との相互リンクを解除しました。';
+        $this->db->prepare('INSERT INTO notices (site_id,title,body,notice_type,is_public) VALUES (?,?,?,?,1)')->execute([$siteId,$title,$body,$registered?'registered':'removed']);
     }
 
     private function saveWidget(): void
@@ -233,12 +277,13 @@ final class AdminController
     private function updateRequest(): void
     {
         $status = in_array($_POST['status'] ?? '', ['new','reviewing','approved','rejected','registered','removed'], true) ? $_POST['status'] : 'new';
+        $before=$this->db->prepare('SELECT status FROM link_requests WHERE id=? AND site_id=?');$before->execute([(int)$_POST['id'],$this->contextSiteId()]);$oldStatus=(string)$before->fetchColumn();
         $stmt = $this->db->prepare('UPDATE link_requests SET status=?,public_message=?,removal_reason=?,notify_status_page=?,notify_email=?,publish_notice=? WHERE id=? AND site_id=?');
         $stmt->execute([$status, Security::cleanText($_POST['public_message'] ?? '', 3000) ?: null, Security::cleanText($_POST['removal_reason'] ?? '', 3000) ?: null, isset($_POST['notify_status_page']) ? 1 : 0, isset($_POST['notify_email']) ? 1 : 0, isset($_POST['publish_notice']) ? 1 : 0, (int) $_POST['id'], $this->contextSiteId()]);
         $q=$this->db->prepare('SELECT r.*,s.name target_name,s.id target_id FROM link_requests r JOIN sites s ON s.id=r.site_id WHERE r.id=? AND r.site_id=?');$q->execute([(int)$_POST['id'],$this->contextSiteId()]);$request=$q->fetch();
         $labels=['new'=>'受付完了','reviewing'=>'確認中','approved'=>'承認','rejected'=>'見送り','registered'=>'登録完了','removed'=>'解除完了'];
         if($request&&$request['notify_email']){$subject='[阿修羅] '.$labels[$status].' - '.$request['receipt_no'];$body=$request['site_name']." 様\n\n相互リンク依頼の状態が「".$labels[$status]."」に更新されました。\n";if($request['public_message'])$body.="\n".$request['public_message']."\n";if($status==='removed'&&$request['removal_reason'])$body.="\n解除理由：".$request['removal_reason']."\n";$from=str_replace(["\r","\n"],'',(string)($this->config['mail']['from']??'noreply@localhost'));@mail($request['email'],$subject,$body,'From: '.$from."\r\nContent-Type: text/plain; charset=UTF-8");}
-        if($request&&$request['publish_notice']&&in_array($status,['registered','removed'],true)){$title=$status==='registered'?'相互リンク登録完了':'相互リンク解除完了';$body=$request['site_name'].'：'.$labels[$status];$this->db->prepare('INSERT INTO notices (site_id,title,body,notice_type,is_public) VALUES (?,?,?,?,1)')->execute([$request['target_id'],$title,$body,$status==='registered'?'registered':'removed']);}
+        if($request&&$status!==$oldStatus&&in_array($status,['registered','removed'],true))$this->createLinkNotice((int)$request['target_id'],(string)$request['site_name'],$status);
     }
 
     private function updateInquiryStatus():void

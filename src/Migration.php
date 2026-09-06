@@ -206,6 +206,10 @@ final class Migration
                 is_special TINYINT(1) NOT NULL DEFAULT 0,
                 is_rescue TINYINT(1) NOT NULL DEFAULT 0,
                 is_excluded TINYINT(1) NOT NULL DEFAULT 0,
+                reciprocal_link_enabled TINYINT(1) NOT NULL DEFAULT 1,
+                reciprocal_rss_enabled TINYINT(1) NOT NULL DEFAULT 0,
+                rss_url VARCHAR(2048) NULL,
+                allocation_type ENUM('normal','priority_120','priority_150','priority_200','special','rescue','excluded') NOT NULL DEFAULT 'normal',
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 CONSTRAINT fk_link_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
@@ -214,6 +218,7 @@ final class Migration
             "CREATE TABLE IF NOT EXISTS rss_feeds (
                 id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                 site_id BIGINT UNSIGNED NOT NULL,
+                reciprocal_link_id BIGINT UNSIGNED NULL,
                 name VARCHAR(255) NOT NULL,
                 feed_url VARCHAR(2048) NOT NULL,
                 active TINYINT(1) NOT NULL DEFAULT 1,
@@ -225,6 +230,8 @@ final class Migration
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 CONSTRAINT fk_feed_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                CONSTRAINT fk_feed_reciprocal_link FOREIGN KEY (reciprocal_link_id) REFERENCES reciprocal_links(id) ON DELETE CASCADE,
+                UNIQUE KEY uq_feed_reciprocal_link (reciprocal_link_id),
                 INDEX idx_feed_active (active, last_fetched_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS rss_items (
@@ -305,6 +312,22 @@ final class Migration
                 CONSTRAINT fk_dist_source FOREIGN KEY (source_site_id) REFERENCES sites(id) ON DELETE CASCADE,
                 INDEX idx_dist_target_time (target_site_id, calculated_at),
                 INDEX idx_dist_batch (target_site_id,batch_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS reciprocal_rss_distribution_history (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                target_site_id BIGINT UNSIGNED NOT NULL,
+                reciprocal_link_id BIGINT UNSIGNED NOT NULL,
+                batch_id CHAR(16) NOT NULL,
+                inbound BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                multiplier DECIMAL(6,2) NOT NULL DEFAULT 1.00,
+                base_weight DECIMAL(14,4) NOT NULL DEFAULT 0,
+                final_percent DECIMAL(8,4) NOT NULL DEFAULT 0,
+                allocation_type VARCHAR(30) NOT NULL DEFAULT 'normal',
+                calculated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_reciprocal_dist_target FOREIGN KEY (target_site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                CONSTRAINT fk_reciprocal_dist_link FOREIGN KEY (reciprocal_link_id) REFERENCES reciprocal_links(id) ON DELETE CASCADE,
+                INDEX idx_reciprocal_dist_batch (target_site_id,batch_id),
+                INDEX idx_reciprocal_dist_time (target_site_id,calculated_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS link_requests (
                 id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -488,7 +511,7 @@ final class Migration
         }
 
         $defaults = [
-            'schema_version' => '4',
+            'schema_version' => '5',
             'ranking_period_days' => '3',
             'distribution_window_hours' => '24',
             'raw_retention_days' => '180',
@@ -591,8 +614,62 @@ final class Migration
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         }
 
+        if ($version < 5) {
+            $linkColumns = [
+                'reciprocal_link_enabled' => 'ALTER TABLE reciprocal_links ADD COLUMN reciprocal_link_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER is_excluded',
+                'reciprocal_rss_enabled' => 'ALTER TABLE reciprocal_links ADD COLUMN reciprocal_rss_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER reciprocal_link_enabled',
+                'rss_url' => 'ALTER TABLE reciprocal_links ADD COLUMN rss_url VARCHAR(2048) NULL AFTER reciprocal_rss_enabled',
+                'allocation_type' => "ALTER TABLE reciprocal_links ADD COLUMN allocation_type ENUM('normal','priority_120','priority_150','priority_200','special','rescue','excluded') NOT NULL DEFAULT 'normal' AFTER rss_url",
+            ];
+            foreach ($linkColumns as $column => $sql) {
+                $exists->execute(['reciprocal_links', $column]);
+                if ((int) $exists->fetchColumn() === 0) {
+                    $db->exec($sql);
+                }
+            }
+
+            $exists->execute(['rss_feeds', 'reciprocal_link_id']);
+            if ((int) $exists->fetchColumn() === 0) {
+                $db->exec('ALTER TABLE rss_feeds ADD COLUMN reciprocal_link_id BIGINT UNSIGNED NULL AFTER site_id');
+                $db->exec('ALTER TABLE rss_feeds ADD CONSTRAINT fk_feed_reciprocal_link FOREIGN KEY (reciprocal_link_id) REFERENCES reciprocal_links(id) ON DELETE CASCADE');
+                $db->exec('ALTER TABLE rss_feeds ADD UNIQUE KEY uq_feed_reciprocal_link (reciprocal_link_id)');
+            }
+
+            $db->exec("CREATE TABLE IF NOT EXISTS reciprocal_rss_distribution_history (
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                target_site_id BIGINT UNSIGNED NOT NULL,
+                reciprocal_link_id BIGINT UNSIGNED NOT NULL,
+                batch_id CHAR(16) NOT NULL,
+                inbound BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                multiplier DECIMAL(6,2) NOT NULL DEFAULT 1.00,
+                base_weight DECIMAL(14,4) NOT NULL DEFAULT 0,
+                final_percent DECIMAL(8,4) NOT NULL DEFAULT 0,
+                allocation_type VARCHAR(30) NOT NULL DEFAULT 'normal',
+                calculated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT fk_reciprocal_dist_target FOREIGN KEY (target_site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                CONSTRAINT fk_reciprocal_dist_link FOREIGN KEY (reciprocal_link_id) REFERENCES reciprocal_links(id) ON DELETE CASCADE,
+                INDEX idx_reciprocal_dist_batch (target_site_id,batch_id),
+                INDEX idx_reciprocal_dist_time (target_site_id,calculated_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+            $db->exec("UPDATE reciprocal_links SET allocation_type=CASE
+                WHEN is_excluded=1 THEN 'excluded'
+                WHEN is_rescue=1 THEN 'rescue'
+                WHEN is_special=1 THEN 'special'
+                WHEN is_priority=1 THEN 'priority_150'
+                ELSE 'normal' END");
+
+            $sites = $db->query('SELECT id FROM sites')->fetchAll(PDO::FETCH_COLUMN);
+            $widget = $db->prepare('INSERT IGNORE INTO widgets (site_id,public_id,type,slot_code,name,item_limit,template_html,custom_css,config_json) VALUES (?,?,?,?,?,?,?,?,?)');
+            foreach ($sites as $siteId) {
+                foreach (range('A', 'J') as $slot) {
+                    $widget->execute([(int)$siteId, Security::randomToken(8), 'rss', 'IMAGE-'.$slot, '画像RSS '.$slot, 10, '<article><a href="{url}">{image_tag}<span>{title}</span></a></article>', '.asyura-rss article{display:flex;margin:0 0 10px}.asyura-rss img{width:96px;height:72px;object-fit:cover;margin-right:10px}', '{"image_required":true,"display_mode":"image"}']);
+                    $widget->execute([(int)$siteId, Security::randomToken(8), 'rss', 'TEXT-'.$slot, 'テキストRSS '.$slot, 10, '<a href="{url}">{title}</a>', '.asyura-rss a{display:block;padding:6px 0;border-bottom:1px solid #eee}', '{"image_required":false,"display_mode":"text"}']);
+                }
+            }
+        }
+
         $stmt = $db->prepare(
-            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','4')
+            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','5')
              ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)"
         );
         $stmt->execute();

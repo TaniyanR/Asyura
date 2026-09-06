@@ -15,7 +15,7 @@ final class RssService
 
     public function fetchDue(): array
     {
-        $feeds=$this->db->query("SELECT f.* FROM rss_feeds f JOIN sites s ON s.id=f.site_id WHERE f.active=1 AND s.active=1 AND (f.last_fetched_at IS NULL OR f.last_fetched_at<=NOW()-INTERVAL 25 MINUTE)")->fetchAll();
+        $feeds=$this->db->query("SELECT f.* FROM rss_feeds f JOIN sites s ON s.id=f.site_id WHERE f.active=1 AND s.active=1 AND (f.reciprocal_link_id IS NULL OR EXISTS (SELECT 1 FROM reciprocal_links l WHERE l.id=f.reciprocal_link_id AND l.site_id=f.site_id AND l.status='approved' AND l.reciprocal_rss_enabled=1 AND l.allocation_type<>'excluded')) AND (f.last_fetched_at IS NULL OR f.last_fetched_at<=NOW()-INTERVAL 25 MINUTE)")->fetchAll();
         $result=['success'=>0,'failed'=>0];
         foreach($feeds as $feed){try{$this->fetchOne($feed);$result['success']++;}catch(\Throwable $e){$result['failed']++;$this->db->prepare('UPDATE rss_feeds SET last_fetched_at=NOW(),last_error=? WHERE id=?')->execute([mb_substr($e->getMessage(),0,1000),$feed['id']]);}}
         return $result;

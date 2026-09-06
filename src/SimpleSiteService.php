@@ -136,7 +136,11 @@ final class SimpleSiteService
         $stmt = $this->db->prepare('INSERT INTO widgets (site_id,public_id,type,slot_code,name,item_limit,template_html,custom_css) VALUES (?,?,?,?,?,?,?,?)');
         $stmt->execute([$siteId,Security::randomToken(8),'ranking','A',$siteName . ' 逆アクセスランキング',10,'<a href="{url}" rel="nofollow">{rank}. {title}</a> <span>{in_count}</span>','.asyura-ranking{font-size:13px;background:#fff;border:1px solid #ddd;padding:8px}']);
         foreach (range('A','E') as $slot) $stmt->execute([$siteId,Security::randomToken(8),'links',$slot,"相互リンク {$slot}",20,'<a href="{url}" rel="{rel}" target="{target}">{title}</a>','.asyura-links{font-size:14px}']);
-        foreach (range('A','J') as $slot) $stmt->execute([$siteId,Security::randomToken(8),'rss',$slot,"相互RSS {$slot}",10,'<article><a href="{url}">{image_tag}<span>{title}</span></a></article>','.asyura-rss article{margin:0 0 8px}.asyura-rss img{width:80px;height:60px;object-fit:cover;margin-right:8px}']);
+        foreach (range('A','J') as $slot) {
+            $stmt->execute([$siteId,Security::randomToken(8),'rss',$slot,"相互RSS {$slot}",10,'<article><a href="{url}">{image_tag}<span>{title}</span></a></article>','.asyura-rss article{margin:0 0 8px}.asyura-rss img{width:80px;height:60px;object-fit:cover;margin-right:8px}']);
+            $stmt->execute([$siteId,Security::randomToken(8),'rss','IMAGE-'.$slot,"画像RSS {$slot}",10,'<article><a href="{url}">{image_tag}<span>{title}</span></a></article>','.asyura-rss article{display:flex;margin:0 0 10px}.asyura-rss img{width:96px;height:72px;object-fit:cover;margin-right:10px}']);
+            $stmt->execute([$siteId,Security::randomToken(8),'rss','TEXT-'.$slot,"テキストRSS {$slot}",10,'<a href="{url}">{title}</a>','.asyura-rss a{display:block;padding:6px 0;border-bottom:1px solid #eee}']);
+        }
         $stmt->execute([$siteId,Security::randomToken(8),'notices','A','お知らせ',5,'<article><time>{published_at}</time><strong>{title}</strong><p>{description}</p></article>','.asyura-notices article{padding:8px;border-bottom:1px solid #ddd}']);
     }
 }
