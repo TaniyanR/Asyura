@@ -511,7 +511,7 @@ final class Migration
         }
 
         $defaults = [
-            'schema_version' => '5',
+            'schema_version' => '6',
             'ranking_period_days' => '3',
             'distribution_window_hours' => '24',
             'raw_retention_days' => '180',
@@ -668,8 +668,48 @@ final class Migration
             }
         }
 
+        if ($version < 6) {
+            // Reclassify retained history with the same conservative rules used
+            // for new events. Existing rows are kept; only their flags change.
+            $botTokens = [
+                'gptbot','oai-searchbot','oai-adsbot','chatgpt-user',
+                'claudebot','claude-searchbot','claude-user','anthropic-ai',
+                'perplexitybot','perplexity-user','googlebot','googleother',
+                'google-inspectiontool','google-extended','storebot-google',
+                'adsbot-google','apis-google','mediapartners-google','bingbot',
+                'bingpreview','adidxbot','applebot','facebookexternalhit',
+                'facebookbot','meta-externalagent','meta-externalfetcher',
+                'bytespider','ccbot','cohere-ai','diffbot','ai2bot','youbot',
+                'omgili','imagesiftbot','petalbot','amazonbot','ahrefsbot',
+                'semrushbot','mj12bot','dotbot','blexbot','dataforseobot',
+                'serpstatbot','headlesschrome','phantomjs','selenium',
+                'playwright','puppeteer','scrapy','python-requests',
+                'python-httpx','aiohttp','go-http-client','apache-httpclient',
+                'okhttp','libwww-perl','crawler','spider','slurp','scraper',
+            ];
+            $conditions = [];
+            foreach ($botTokens as $token) {
+                $conditions[] = 'LOWER(COALESCE(user_agent,\'\')) LIKE ' . $db->quote('%'.$token.'%');
+            }
+            $db->exec('UPDATE raw_events SET is_bot=1,is_suspicious=1 WHERE '.implode(' OR ', $conditions));
+            $db->exec("UPDATE raw_events SET is_suspicious=1 WHERE user_agent IS NULL OR CHAR_LENGTH(TRIM(user_agent))<12");
+
+            $db->exec("UPDATE analytics_pageviews p JOIN raw_events r ON r.site_id=p.site_id AND r.pageview_id=p.pageview_id AND r.event_type='pageview' SET p.is_bot=GREATEST(p.is_bot,r.is_bot),p.is_suspicious=GREATEST(p.is_suspicious,r.is_suspicious)");
+            $db->exec("INSERT IGNORE INTO analytics_sessions (site_id,session_hash,visitor_hash,started_at,last_seen_at,pageviews,channel,referrer_host,landing_page,exit_page,device,browser,os,is_bot,is_suspicious) SELECT grouped.site_id,grouped.session_hash,first_event.visitor_hash,grouped.started_at,grouped.last_seen_at,grouped.pageviews,COALESCE(NULLIF(first_event.channel,''),'direct'),first_event.referrer_host,first_event.normalized_page_url,last_event.normalized_page_url,first_event.device,first_event.browser,first_event.os,grouped.is_bot,grouped.is_suspicious FROM (SELECT site_id,session_hash,MIN(id) first_id,MAX(id) last_id,MIN(occurred_at) started_at,MAX(occurred_at) last_seen_at,COUNT(*) pageviews,MAX(is_bot) is_bot,MAX(is_suspicious) is_suspicious FROM raw_events WHERE event_type='pageview' AND session_hash IS NOT NULL GROUP BY site_id,session_hash) grouped JOIN raw_events first_event ON first_event.site_id=grouped.site_id AND first_event.id=grouped.first_id JOIN raw_events last_event ON last_event.site_id=grouped.site_id AND last_event.id=grouped.last_id");
+            $db->exec("UPDATE analytics_sessions s JOIN (SELECT site_id,session_hash,MAX(is_bot) is_bot,MAX(is_suspicious) is_suspicious FROM raw_events WHERE event_type='pageview' GROUP BY site_id,session_hash) r ON r.site_id=s.site_id AND r.session_hash=s.session_hash SET s.is_bot=GREATEST(s.is_bot,r.is_bot),s.is_suspicious=GREATEST(s.is_suspicious,r.is_suspicious)");
+
+            // Correct only dates still represented by raw_events. Older
+            // aggregate-only history is intentionally left untouched.
+            $db->exec('CREATE TEMPORARY TABLE asyura_raw_dates AS SELECT DISTINCT site_id,DATE(occurred_at) stat_date FROM raw_events');
+            $db->exec("CREATE TEMPORARY TABLE asyura_human_daily AS SELECT site_id,DATE(occurred_at) stat_date,SUM(event_type='pageview') pv,COUNT(DISTINCT CASE WHEN event_type='pageview' THEN visitor_hash END) uu,SUM(event_type='outbound') outbound,SUM(event_type='internal_click') internal_clicks,SUM(event_type='widget_click') widget_clicks FROM raw_events WHERE is_bot=0 AND is_suspicious=0 GROUP BY site_id,DATE(occurred_at)");
+            $db->exec('UPDATE daily_stats d JOIN asyura_raw_dates rd ON rd.site_id=d.site_id AND rd.stat_date=d.stat_date LEFT JOIN asyura_human_daily h ON h.site_id=d.site_id AND h.stat_date=d.stat_date SET d.pv=COALESCE(h.pv,0),d.uu=COALESCE(h.uu,0),d.outbound=COALESCE(h.outbound,0),d.internal_clicks=COALESCE(h.internal_clicks,0),d.widget_clicks=COALESCE(h.widget_clicks,0)');
+            $db->exec('INSERT INTO daily_stats (site_id,stat_date,pv,uu,outbound,internal_clicks,widget_clicks) SELECT site_id,stat_date,pv,uu,outbound,internal_clicks,widget_clicks FROM asyura_human_daily ON DUPLICATE KEY UPDATE pv=VALUES(pv),uu=VALUES(uu),outbound=VALUES(outbound),internal_clicks=VALUES(internal_clicks),widget_clicks=VALUES(widget_clicks)');
+            $db->exec('DROP TEMPORARY TABLE asyura_human_daily');
+            $db->exec('DROP TEMPORARY TABLE asyura_raw_dates');
+        }
+
         $stmt = $db->prepare(
-            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','5')
+            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','6')
              ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)"
         );
         $stmt->execute();

@@ -2,11 +2,13 @@
 declare(strict_types=1);
 
 require dirname(__DIR__).'/src/UrlNormalizer.php';
+require dirname(__DIR__).'/src/TrafficClassifier.php';
 require dirname(__DIR__).'/src/Security.php';
 require dirname(__DIR__).'/src/SimpleSiteService.php';
 
 use Asyura\Security;
 use Asyura\SimpleSiteService;
+use Asyura\TrafficClassifier;
 use Asyura\UrlNormalizer;
 
 $tests=[
@@ -28,13 +30,13 @@ $adminLinks=require dirname(__DIR__).'/config/admin_links.php';
 foreach($requiredGroups as $group){if(!array_key_exists($group,$adminLinks)){fwrite(STDERR,"FAIL missing admin link group: {$group}\n");$failed++;}}
 foreach($adminLinks as $group=>$links){foreach($links as $link){if(empty($link['label'])||Security::safeUrl($link['url']??'')===''){fwrite(STDERR,"FAIL invalid admin link in: {$group}\n");$failed++;}}}
 $tracker=(string)file_get_contents(dirname(__DIR__).'/assets/tracker.js');
-foreach(['__asyuraTrackerLoaded','sendBeacon','fetch(endpoint','pageview_id','engagement_ms'] as $needle){if(!str_contains($tracker,$needle)){fwrite(STDERR,"FAIL tracker feature missing: {$needle}\n");$failed++;}}
+foreach(['__asyuraTrackerLoaded','sendBeacon','fetch(endpoint','pageview_id','engagement_ms','asyura_queue_','pushState','navigator.webdriver','Max-Age='] as $needle){if(!str_contains($tracker,$needle)){fwrite(STDERR,"FAIL tracker feature missing: {$needle}\n");$failed++;}}
 $migration=(string)file_get_contents(dirname(__DIR__).'/src/Migration.php');
 foreach(['uq_event_dedup','analytics_sessions','analytics_pageviews','conversion_rules','tracking_security_events','tracking_rate_limits'] as $needle){if(!str_contains($migration,$needle)){fwrite(STDERR,"FAIL migration missing: {$needle}\n");$failed++;}}
 $adminIndex=(string)file_get_contents(dirname(__DIR__).'/admin/index.php');
 foreach(["'search_console'","'notices'","'contact'","'inquiries'","'requests'"] as $needle){if(!str_contains($adminIndex,$needle)){fwrite(STDERR,"FAIL admin route missing: {$needle}\n");$failed++;}}
 $accessReport=(string)file_get_contents(dirname(__DIR__).'/admin/access-report.php');
-foreach(['classified_channel','landing_page','exit_page','NOW()-INTERVAL 30 MINUTE','site_id IS NULL','admin_login_failed'] as $needle){if(!str_contains($accessReport,$needle)){fwrite(STDERR,"FAIL access report missing: {$needle}\n");$failed++;}}
+foreach(['AnalyticsService','landing_page','exit_page','NOW()-INTERVAL 30 MINUTE','site_id IS NULL','admin_login_failed','is_suspicious=0'] as $needle){if(!str_contains($accessReport,$needle)){fwrite(STDERR,"FAIL access report missing: {$needle}\n");$failed++;}}
 $auth=(string)file_get_contents(dirname(__DIR__).'/src/Auth.php');
 foreach(['admin_login_failed','admin_login_rate_limit'] as $needle){if(!str_contains($auth,$needle)){fwrite(STDERR,"FAIL auth security log missing: {$needle}\n");$failed++;}}
 $trackerPhp=(string)file_get_contents(dirname(__DIR__).'/src/Tracker.php');
@@ -43,7 +45,7 @@ foreach(['admin/export.php','admin/delete_year.php'] as $relative){$dataCode=(st
 $exportCode=(string)file_get_contents(dirname(__DIR__).'/admin/export.php');if(!str_contains($exportCode,'contact_messages')){fwrite(STDERR,"FAIL export missing contact_messages\n");$failed++;}
 $inquiry=(string)file_get_contents(dirname(__DIR__).'/public/inquiry.php');
 foreach(['form_token','website_confirm','tracking_rate_limits','contact_messages','consent','site_id'] as $needle){if(!str_contains($inquiry,$needle)){fwrite(STDERR,"FAIL inquiry protection missing: {$needle}\n");$failed++;}}
-foreach(['contact_messages',"'schema_version' => '5'",'idx_contact_message_site_status'] as $needle){if(!str_contains($migration,$needle)){fwrite(STDERR,"FAIL inquiry migration missing: {$needle}\n");$failed++;}}
+foreach(['contact_messages',"'schema_version' => '6'",'idx_contact_message_site_status','asyura_human_daily'] as $needle){if(!str_contains($migration,$needle)){fwrite(STDERR,"FAIL inquiry migration missing: {$needle}\n");$failed++;}}
 $reciprocalPage=(string)file_get_contents(dirname(__DIR__).'/admin/reciprocal-pages.php');foreach(['priority_120','priority_150','priority_200','相互設定していないサイト','特別優遇','救済'] as $needle){if(!str_contains($reciprocalPage,$needle)){fwrite(STDERR,"FAIL reciprocal RSS UI missing: {$needle}\n");$failed++;}}
 foreach(['reciprocal_link_enabled','reciprocal_rss_enabled','allocation_type','reciprocal_rss_distribution_history'] as $needle){if(!str_contains($migration,$needle)){fwrite(STDERR,"FAIL reciprocal RSS migration missing: {$needle}\n");$failed++;}}if(str_contains($migration,'reciprocal_rss_daily_displays')){fwrite(STDERR,"FAIL reciprocal RSS must track outbound accesses, not display counts\n");$failed++;}
 $distribution=(string)file_get_contents(dirname(__DIR__).'/src/DistributionService.php');foreach(['is_suspicious=0','priority_120','priority_150','priority_200','reciprocal_link_id','target_accesses','remaining_accesses','todayOutbound'] as $needle){if(!str_contains($distribution,$needle)){fwrite(STDERR,"FAIL reciprocal distribution missing: {$needle}\n");$failed++;}}if(str_contains($distribution,'claimRescueDisplay')){fwrite(STDERR,"FAIL rescue must be based on outbound accesses, not displays\n");$failed++;}
@@ -56,6 +58,9 @@ $adminShell=(string)file_get_contents(dirname(__DIR__).'/assets/admin-shell.css'
 $view=(string)file_get_contents(dirname(__DIR__).'/src/View.php');if(!str_contains($view,"self::assetUrl('assets/admin-shell.css')")){fwrite(STDERR,"FAIL admin asset cache busting missing\n");$failed++;}
 $accessReport=(string)file_get_contents(dirname(__DIR__).'/admin/access-report.php');foreach(['$requestedDays','$safeMax'] as $needle){if(!str_contains($accessReport,$needle)){fwrite(STDERR,"FAIL analytics empty-data protection missing: {$needle}\n");$failed++;}}if(str_contains($accessReport,'max(1,...array_map')){fwrite(STDERR,"FAIL unsafe analytics max remains\n");$failed++;}
 $bootstrap=(string)file_get_contents(dirname(__DIR__).'/src/bootstrap.php');if(!str_contains($bootstrap,"ini_set('display_errors', '0')")){fwrite(STDERR,"FAIL production error details are not hidden\n");$failed++;}
+$crawlerTests=['GPTBot','OAI-SearchBot','ChatGPT-User','ClaudeBot','Claude-User','PerplexityBot','Googlebot','bingbot','Bytespider','AhrefsBot'];foreach($crawlerTests as$agent){$result=TrafficClassifier::classify('Mozilla/5.0 '.$agent);if(!$result['is_bot']||!$result['is_suspicious']){fwrite(STDERR,"FAIL crawler not excluded: {$agent}\n");$failed++;}}
+$human=TrafficClassifier::classify('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36');if($human['is_bot']||$human['is_suspicious']){fwrite(STDERR,"FAIL normal browser classified as crawler\n");$failed++;}
+$automated=TrafficClassifier::classify('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0 Safari/537.36',['automation'=>true]);if(!$automated['is_suspicious']){fwrite(STDERR,"FAIL browser automation not held\n");$failed++;}
 $noticePage=(string)file_get_contents(dirname(__DIR__).'/admin/pages.php');if(!str_contains($noticePage,'notice-form-grid')){fwrite(STDERR,"FAIL notice form layout missing\n");$failed++;}
 $contactPage=(string)file_get_contents(dirname(__DIR__).'/admin/contact-settings.php');foreach(['standalone-field','contact-actions','embed-code-section'] as $needle){if(!str_contains($contactPage,$needle)){fwrite(STDERR,"FAIL contact layout missing: {$needle}\n");$failed++;}}
 if(str_contains($view,'elseif (count($sites) === 1)')){fwrite(STDERR,"FAIL global site switcher still shows a site name\n");$failed++;}

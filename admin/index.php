@@ -180,18 +180,36 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
                 s.id,
                 s.name,
                 s.url,
-                COALESCE(d.pv, 0) AS pv,
-                COALESCE(d.uu, 0) AS uu,
+                (
+                    SELECT COUNT(*)
+                    FROM raw_events re
+                    WHERE re.site_id = s.id
+                      AND re.event_type = 'pageview'
+                      AND re.is_bot = 0
+                      AND re.is_suspicious = 0
+                      AND re.occurred_at >= CURDATE()
+                      AND re.occurred_at < CURDATE() + INTERVAL 1 DAY
+                ) AS pv,
+                (
+                    SELECT COUNT(DISTINCT re.visitor_hash)
+                    FROM raw_events re
+                    WHERE re.site_id = s.id
+                      AND re.event_type = 'pageview'
+                      AND re.is_bot = 0
+                      AND re.is_suspicious = 0
+                      AND re.occurred_at >= CURDATE()
+                      AND re.occurred_at < CURDATE() + INTERVAL 1 DAY
+                ) AS uu,
 
                 (
-                    SELECT COUNT(DISTINCT re.session_hash)
-                    FROM raw_events re
+                    SELECT COUNT(*)
+                    FROM analytics_sessions re
                     WHERE
                         re.site_id = s.id
-                        AND re.event_type = 'pageview'
                         AND re.is_bot = 0
-                        AND DATE(re.occurred_at) = CURDATE()
-                        AND re.session_hash IS NOT NULL
+                        AND re.is_suspicious = 0
+                        AND re.started_at >= CURDATE()
+                        AND re.started_at < CURDATE() + INTERVAL 1 DAY
                 ) AS sessions,
 
                 (
@@ -203,10 +221,6 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
                 ) AS pending_requests
 
             FROM sites s
-
-            LEFT JOIN daily_stats d
-                ON d.site_id = s.id
-                AND d.stat_date = CURDATE()
 
             WHERE s.id IN (" . implode(',', array_fill(0, count($asyuraSites), '?')) . ")
 
