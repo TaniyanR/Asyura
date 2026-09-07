@@ -154,10 +154,27 @@ final class AdminController
             throw new \InvalidArgumentException('提携サイト名を入力してください。');
         }
         $rssEnabled = isset($_POST['reciprocal_rss_enabled']);
-        $rssUrl = Security::safeUrl($_POST['rss_url'] ?? '');
-        if ($rssEnabled && $rssUrl === '') {
-            throw new \InvalidArgumentException('相互RSSを利用する場合は、RSS URLを入力してください。');
+        $feedIds = (array) ($_POST['rss_feed_id'] ?? []);
+        $feedNames = (array) ($_POST['rss_feed_name'] ?? []);
+        $feedUrls = (array) ($_POST['rss_feed_url'] ?? []);
+        $feedActive = (array) ($_POST['rss_feed_active'] ?? []);
+        $rssFeeds = [];
+        foreach ($feedUrls as $index => $rawFeedUrl) {
+            $rawFeedUrl = trim((string) $rawFeedUrl);
+            if ($rawFeedUrl === '') continue;
+            $feedUrl = Security::safeUrl($rawFeedUrl);
+            if ($feedUrl === '') throw new \InvalidArgumentException('RSS URLが正しくありません。');
+            $rssFeeds[] = [
+                'id' => max(0, (int) ($feedIds[$index] ?? 0)),
+                'name' => Security::cleanText($feedNames[$index] ?? '', 255),
+                'url' => $feedUrl,
+                'active' => isset($feedActive[$index]) ? 1 : 0,
+            ];
         }
+        $activeFeeds = array_filter($rssFeeds, static fn(array $feed): bool => $feed['active'] === 1);
+        if ($rssEnabled && !$activeFeeds) throw new \InvalidArgumentException('相互RSSを利用する場合は、使用するRSS URLを1件以上入力してください。');
+        $firstActiveFeed = $activeFeeds ? reset($activeFeeds) : null;
+        $rssUrl = is_array($firstActiveFeed) ? (string) $firstActiveFeed['url'] : ($rssFeeds[0]['url'] ?? null);
         $allocationTypes = ['normal','priority_120','priority_150','priority_200','special','rescue','excluded'];
         $allocationType = in_array($_POST['allocation_type'] ?? '', $allocationTypes, true) ? (string) $_POST['allocation_type'] : 'normal';
         $slots = array_values(array_intersect((array) ($_POST['slots'] ?? []), range('A', 'E')));
@@ -191,11 +208,28 @@ final class AdminController
             }
             $stmt->execute($values);
             if ($id === 0) $id = (int) $this->db->lastInsertId();
-            if ($rssEnabled) {
-                $feed=$this->db->prepare('INSERT INTO rss_feeds (site_id,reciprocal_link_id,name,feed_url,active) VALUES (?,?,?,?,1) ON DUPLICATE KEY UPDATE site_id=VALUES(site_id),name=VALUES(name),feed_url=VALUES(feed_url),active=1');
-                $feed->execute([$this->contextSiteId(),$id,$name,$rssUrl]);
-            } else {
-                $this->db->prepare('UPDATE rss_feeds SET active=0 WHERE reciprocal_link_id=? AND site_id=?')->execute([$id,$this->contextSiteId()]);
+            $existing=$this->db->prepare('SELECT id FROM rss_feeds WHERE reciprocal_link_id=? AND site_id=? FOR UPDATE');
+            $existing->execute([$id,$this->contextSiteId()]);
+            $existingIds=array_map('intval',$existing->fetchAll(\PDO::FETCH_COLUMN));
+            $submittedIds=[];
+            $insertFeed=$this->db->prepare('INSERT INTO rss_feeds (site_id,reciprocal_link_id,name,feed_url,active) VALUES (?,?,?,?,?)');
+            $updateFeed=$this->db->prepare('UPDATE rss_feeds SET name=?,feed_url=?,active=? WHERE id=? AND reciprocal_link_id=? AND site_id=?');
+            foreach($rssFeeds as $position=>$feed){
+                $feedName=$feed['name']!==''?$feed['name']:$name.' RSS '.($position+1);
+                if($feed['id']>0){
+                    if(!in_array($feed['id'],$existingIds,true))throw new \InvalidArgumentException('選択中のサイトに、このRSSはありません。');
+                    $updateFeed->execute([$feedName,$feed['url'],$feed['active'],$feed['id'],$id,$this->contextSiteId()]);
+                    $submittedIds[]=$feed['id'];
+                }else{
+                    $insertFeed->execute([$this->contextSiteId(),$id,$feedName,$feed['url'],$feed['active']]);
+                    $submittedIds[]=(int)$this->db->lastInsertId();
+                }
+            }
+            $omitted=array_values(array_diff($existingIds,$submittedIds));
+            if($omitted){
+                $placeholders=implode(',',array_fill(0,count($omitted),'?'));
+                $disable=$this->db->prepare("UPDATE rss_feeds SET active=0 WHERE site_id=? AND reciprocal_link_id=? AND id IN ({$placeholders})");
+                $disable->execute(array_merge([$this->contextSiteId(),$id],$omitted));
             }
             $oldStatus=(string)($old['status']??'');
             if($status!==$oldStatus&&in_array($status,['approved','removed'],true))$this->createLinkNotice($this->contextSiteId(),$name,$status);

@@ -31,7 +31,7 @@ final class RssService
         $items=[];
         if(isset($xml->channel->item)){foreach($xml->channel->item as $item)$items[]=$this->parseRssItem($item);}
         else{$namespaces=$xml->getNamespaces(true);$atom=$xml;if(isset($namespaces['']))$atom=$xml->children($namespaces['']);if(isset($atom->entry)){foreach($atom->entry as $item)$items[]=$this->parseAtomItem($item);}else{throw new \RuntimeException('RSS2またはAtom形式ではありません。');}}
-        $count=0;$this->db->beginTransaction();try{$itemStmt=$this->db->prepare('INSERT INTO rss_items (feed_id,site_id,guid_hash,title,url,normalized_url,description,category,image_url,published_at,fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE title=VALUES(title),url=VALUES(url),description=VALUES(description),category=VALUES(category),image_url=VALUES(image_url),published_at=VALUES(published_at),fetched_at=NOW()');$archive=$this->db->prepare('INSERT INTO article_archive (site_id,feed_id,url_hash,title,url,description,category,image_url,original_published_at) VALUES (?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE title=VALUES(title),description=VALUES(description),category=VALUES(category),image_url=COALESCE(VALUES(image_url),image_url),last_seen_at=NOW()');foreach(array_slice($items,0,200) as $item){if($item['url']===''||$item['title']==='')continue;$guidHash=hash('sha256',$item['guid']?:$item['url']);$urlHash=hash('sha256',UrlNormalizer::normalize($item['url']));$itemStmt->execute([$feed['id'],$feed['site_id'],$guidHash,$item['title'],$item['url'],UrlNormalizer::normalize($item['url']),$item['description']?:null,$item['category']?:null,$item['image']?:null,$item['published']]);$archive->execute([$feed['site_id'],$feed['id'],$urlHash,$item['title'],$item['url'],$item['description']?:null,$item['category']?:null,$item['image']?:null,$item['published']]);$count++;}$this->db->prepare('UPDATE rss_feeds SET last_fetched_at=NOW(),last_success_at=NOW(),last_error=NULL,etag=?,last_modified=? WHERE id=?')->execute([$response['etag']?:null,$response['last_modified']?:null,$feed['id']]);$this->db->commit();}catch(\Throwable $e){$this->db->rollBack();throw $e;}return $count;
+        $count=0;$this->db->beginTransaction();try{$itemStmt=$this->db->prepare('INSERT INTO rss_items (feed_id,site_id,guid_hash,title,url,normalized_url,description,category,image_url,image_is_usable,published_at,fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE title=VALUES(title),url=VALUES(url),description=VALUES(description),category=VALUES(category),image_url=VALUES(image_url),image_is_usable=VALUES(image_is_usable),published_at=VALUES(published_at),fetched_at=NOW()');$archive=$this->db->prepare('INSERT INTO article_archive (site_id,feed_id,url_hash,title,url,description,category,image_url,original_published_at) VALUES (?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE title=VALUES(title),description=VALUES(description),category=VALUES(category),image_url=COALESCE(VALUES(image_url),image_url),last_seen_at=NOW()');foreach(array_slice($items,0,200) as $item){if($item['url']===''||$item['title']==='')continue;$guidHash=hash('sha256',$item['guid']?:$item['url']);$urlHash=hash('sha256',UrlNormalizer::normalize($item['url']));$image=(string)($item['image']??'');$imageUsable=$this->isUsableImage($image)?1:0;$itemStmt->execute([$feed['id'],$feed['site_id'],$guidHash,$item['title'],$item['url'],UrlNormalizer::normalize($item['url']),$item['description']?:null,$item['category']?:null,$image?:null,$imageUsable,$item['published']]);$archive->execute([$feed['site_id'],$feed['id'],$urlHash,$item['title'],$item['url'],$item['description']?:null,$item['category']?:null,$image?:null,$item['published']]);$count++;}$this->db->prepare('UPDATE rss_feeds SET last_fetched_at=NOW(),last_success_at=NOW(),last_error=NULL,etag=?,last_modified=? WHERE id=?')->execute([$response['etag']?:null,$response['last_modified']?:null,$feed['id']]);$this->db->commit();}catch(\Throwable $e){$this->db->rollBack();throw $e;}return $count;
     }
 
     private function parseRssItem(\SimpleXMLElement $item): array
@@ -53,6 +53,15 @@ final class RssService
     private function imageFromHtml(string $html): string
     {
         return preg_match('~<img[^>]+src=["\']([^"\']+)["\']~i',$html,$m)?html_entity_decode($m[1],ENT_QUOTES|ENT_HTML5,'UTF-8'):'';
+    }
+
+    private function isUsableImage(string $url): bool
+    {
+        if(Security::safeUrl($url)==='')return false;
+        $value=mb_strtolower(rawurldecode($url));
+        $placeholder='~(?:^|[/_.?&=-])(?:no-?image|noimage|placeholder|dummy|default(?:-?(?:image|thumb|photo))?|spacer|transparent|blank|loading|coming-?soon|not-?found|image-?none|nowprinting|no-?photo)(?:[/_.?&=-]|$)~i';
+        if(preg_match($placeholder,$value))return false;
+        return !preg_match('~(?:^|[/_.?&=-])1x1(?:[/_.?&=-]|$)~i',$value);
     }
 
     private function download(string $url,string $etag='',string $modified=''): array

@@ -27,6 +27,32 @@ document.addEventListener('click',function(e){
     document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSiteMenu()});
 })();
 
+document.addEventListener('click',function(e){
+    var add=e.target.closest('[data-add-rss-feed]');
+    if(add){
+        var form=add.closest('form');
+        var list=form&&form.querySelector('[data-rss-feed-list]');
+        var template=form&&form.querySelector('[data-rss-feed-template]');
+        if(!list||!template)return;
+        var index=String(Date.now())+String(Math.floor(Math.random()*1000));
+        list.insertAdjacentHTML('beforeend',template.innerHTML.replaceAll('__INDEX__',index));
+        var rows=list.querySelectorAll('.rss-feed-row');
+        var input=rows[rows.length-1].querySelector('input:not([type="hidden"])');
+        if(input)input.focus();
+        return;
+    }
+    var remove=e.target.closest('[data-remove-rss-feed]');
+    if(!remove)return;
+    var row=remove.closest('.rss-feed-row');
+    var list=row&&row.closest('[data-rss-feed-list]');
+    if(!row||!list)return;
+    if(list.querySelectorAll('.rss-feed-row').length===1){
+        row.querySelectorAll('input').forEach(function(input){if(input.type==='hidden')input.value='0';else if(input.type==='checkbox')input.checked=true;else input.value=''});
+        return;
+    }
+    row.remove();
+});
+
 (function(){
     var sidebar=document.querySelector('[data-sidebar]');
     var overlay=document.querySelector('[data-sidebar-overlay]');

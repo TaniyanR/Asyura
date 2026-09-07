@@ -25,7 +25,12 @@ final class AnalyticsService
     {
         $interval=$this->interval($days);
         $stmt=$this->db->prepare("SELECT DATE(occurred_at) stat_date,COUNT(*) pv,COUNT(DISTINCT visitor_hash) uu FROM raw_events WHERE site_id=? AND event_type='pageview' AND is_bot=0 AND is_suspicious=0 AND occurred_at>=CURDATE()-INTERVAL {$interval} DAY GROUP BY DATE(occurred_at) ORDER BY stat_date");
-        $stmt->execute([$siteId]);return $stmt->fetchAll();
+        $stmt->execute([$siteId]);$indexed=[];
+        foreach($stmt->fetchAll() as $row)$indexed[(string)$row['stat_date']]=['stat_date'=>(string)$row['stat_date'],'pv'=>(int)$row['pv'],'uu'=>(int)$row['uu']];
+        $today=new \DateTimeImmutable('today',new \DateTimeZone('Asia/Tokyo'));
+        $rows=[];
+        for($offset=max(0,$days-1);$offset>=0;$offset--){$date=$today->modify('-'.$offset.' days')->format('Y-m-d');$rows[]=$indexed[$date]??['stat_date'=>$date,'pv'=>0,'uu'=>0];}
+        return $rows;
     }
 
     public function channels(int $siteId, int $days): array

@@ -231,7 +231,7 @@ final class Migration
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 CONSTRAINT fk_feed_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
                 CONSTRAINT fk_feed_reciprocal_link FOREIGN KEY (reciprocal_link_id) REFERENCES reciprocal_links(id) ON DELETE CASCADE,
-                UNIQUE KEY uq_feed_reciprocal_link (reciprocal_link_id),
+                INDEX idx_feed_reciprocal_link (reciprocal_link_id, site_id, active),
                 INDEX idx_feed_active (active, last_fetched_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS rss_items (
@@ -245,6 +245,7 @@ final class Migration
                 description TEXT NULL,
                 category VARCHAR(255) NULL,
                 image_url VARCHAR(2048) NULL,
+                image_is_usable TINYINT(1) NOT NULL DEFAULT 0,
                 published_at DATETIME NULL,
                 fetched_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT fk_item_feed FOREIGN KEY (feed_id) REFERENCES rss_feeds(id) ON DELETE CASCADE,
@@ -511,7 +512,7 @@ final class Migration
         }
 
         $defaults = [
-            'schema_version' => '6',
+            'schema_version' => '7',
             'ranking_period_days' => '3',
             'distribution_window_hours' => '24',
             'raw_retention_days' => '180',
@@ -708,8 +709,31 @@ final class Migration
             $db->exec('DROP TEMPORARY TABLE asyura_raw_dates');
         }
 
+        if ($version < 7) {
+            $indexExists=$db->prepare('SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND INDEX_NAME=?');
+            $indexExists->execute(['rss_feeds','idx_feed_reciprocal_link']);
+            if((int)$indexExists->fetchColumn()===0)$db->exec('ALTER TABLE rss_feeds ADD INDEX idx_feed_reciprocal_link (reciprocal_link_id,site_id,active)');
+            $indexExists->execute(['rss_feeds','uq_feed_reciprocal_link']);
+            if((int)$indexExists->fetchColumn()>0)$db->exec('ALTER TABLE rss_feeds DROP INDEX uq_feed_reciprocal_link');
+
+            // Keep legacy reciprocal RSS URLs by turning them into the first feed.
+            $db->exec("INSERT INTO rss_feeds (site_id,reciprocal_link_id,name,feed_url,active)
+                SELECT l.site_id,l.id,CONCAT(l.partner_name,' RSS 1'),l.rss_url,1
+                FROM reciprocal_links l
+                WHERE l.rss_url IS NOT NULL AND l.rss_url<>''
+                  AND NOT EXISTS (SELECT 1 FROM rss_feeds f WHERE f.site_id=l.site_id AND f.reciprocal_link_id=l.id)");
+
+            $exists->execute(['rss_items','image_is_usable']);
+            if((int)$exists->fetchColumn()===0)$db->exec('ALTER TABLE rss_items ADD COLUMN image_is_usable TINYINT(1) NOT NULL DEFAULT 0 AFTER image_url');
+            $db->exec("UPDATE rss_items SET image_is_usable=CASE
+                WHEN image_url IS NULL OR image_url='' THEN 0
+                WHEN LOWER(image_url) REGEXP '(^|[/_.?&=-])(no-?image|noimage|placeholder|dummy|default(-?(image|thumb|photo))?|spacer|transparent|blank|loading|coming-?soon|not-?found|image-?none|nowprinting|no-?photo)([/_.?&=-]|$)' THEN 0
+                WHEN LOWER(image_url) REGEXP '(^|[/_.?&=-])1x1([/_.?&=-]|$)' THEN 0
+                ELSE 1 END");
+        }
+
         $stmt = $db->prepare(
-            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','6')
+            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','7')
              ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)"
         );
         $stmt->execute();
