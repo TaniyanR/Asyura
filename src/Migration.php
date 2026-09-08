@@ -32,6 +32,7 @@ final class Migration
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS sites (
                 id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                sort_order INT UNSIGNED NOT NULL DEFAULT 2147483647,
                 public_id VARCHAR(32) NOT NULL UNIQUE,
                 site_key VARCHAR(64) NOT NULL,
                 name VARCHAR(255) NOT NULL,
@@ -63,6 +64,7 @@ final class Migration
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 INDEX idx_sites_active (active),
+                INDEX idx_sites_sort (sort_order, id),
                 INDEX idx_sites_normalized (normalized_url(191))
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS site_aliases (
@@ -512,7 +514,7 @@ final class Migration
         }
 
         $defaults = [
-            'schema_version' => '7',
+            'schema_version' => '8',
             'ranking_period_days' => '3',
             'distribution_window_hours' => '24',
             'raw_retention_days' => '180',
@@ -732,8 +734,17 @@ final class Migration
                 ELSE 1 END");
         }
 
+        if ($version < 8) {
+            $exists->execute(['sites','sort_order']);
+            if((int)$exists->fetchColumn()===0)$db->exec('ALTER TABLE sites ADD COLUMN sort_order INT UNSIGNED NOT NULL DEFAULT 2147483647 AFTER id');
+            $db->exec('UPDATE sites SET sort_order=id WHERE sort_order=2147483647');
+            $indexExists=$db->prepare('SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND INDEX_NAME=?');
+            $indexExists->execute(['sites','idx_sites_sort']);
+            if((int)$indexExists->fetchColumn()===0)$db->exec('ALTER TABLE sites ADD INDEX idx_sites_sort (sort_order,id)');
+        }
+
         $stmt = $db->prepare(
-            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','7')
+            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','8')
              ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)"
         );
         $stmt->execute();

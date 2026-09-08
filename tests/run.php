@@ -25,6 +25,12 @@ $sitePartition=SimpleSiteService::partitionByUrl([
     ['id'=>3,'url'=>'https://another.example/','normalized_url'=>'https://another.example/'],
 ]);
 if(array_column($sitePartition['visible'],'id')!==[1,3]||array_column($sitePartition['duplicates'],'id')!==[2]){fwrite(STDERR,"FAIL duplicate site partition\n");$failed++;}
+$reorderedPartition=SimpleSiteService::partitionByUrl([
+    ['id'=>2,'url'=>'http://www.example.com','normalized_url'=>'https://example.com/'],
+    ['id'=>3,'url'=>'https://another.example/','normalized_url'=>'https://another.example/'],
+    ['id'=>1,'url'=>'https://example.com/','normalized_url'=>'https://example.com/'],
+]);
+if(array_column($reorderedPartition['visible'],'id')!==[3,1]||array_column($reorderedPartition['duplicates'],'id')!==[2]){fwrite(STDERR,"FAIL canonical site changed after reorder\n");$failed++;}
 $requiredGroups=['Google・SEO','HTML・Web確認','GitHub','AI','その他ツール'];
 $adminLinks=require dirname(__DIR__).'/config/admin_links.php';
 foreach($requiredGroups as $group){if(!array_key_exists($group,$adminLinks)){fwrite(STDERR,"FAIL missing admin link group: {$group}\n");$failed++;}}
@@ -45,7 +51,7 @@ foreach(['admin/export.php','admin/delete_year.php'] as $relative){$dataCode=(st
 $exportCode=(string)file_get_contents(dirname(__DIR__).'/admin/export.php');if(!str_contains($exportCode,'contact_messages')){fwrite(STDERR,"FAIL export missing contact_messages\n");$failed++;}
 $inquiry=(string)file_get_contents(dirname(__DIR__).'/public/inquiry.php');
 foreach(['form_token','website_confirm','tracking_rate_limits','contact_messages','consent','site_id'] as $needle){if(!str_contains($inquiry,$needle)){fwrite(STDERR,"FAIL inquiry protection missing: {$needle}\n");$failed++;}}
-foreach(['contact_messages',"'schema_version' => '7'",'idx_contact_message_site_status','asyura_human_daily'] as $needle){if(!str_contains($migration,$needle)){fwrite(STDERR,"FAIL inquiry migration missing: {$needle}\n");$failed++;}}
+foreach(['contact_messages',"'schema_version' => '8'",'idx_contact_message_site_status','asyura_human_daily'] as $needle){if(!str_contains($migration,$needle)){fwrite(STDERR,"FAIL inquiry migration missing: {$needle}\n");$failed++;}}
 $reciprocalPage=(string)file_get_contents(dirname(__DIR__).'/admin/reciprocal-pages.php');foreach(['priority_120','priority_150','priority_200','相互設定していないサイト','特別優遇','救済'] as $needle){if(!str_contains($reciprocalPage,$needle)){fwrite(STDERR,"FAIL reciprocal RSS UI missing: {$needle}\n");$failed++;}}
 foreach(['rss_feed_url[','data-add-rss-feed','active_feed_count'] as $needle){if(!str_contains($reciprocalPage,$needle)){fwrite(STDERR,"FAIL multiple reciprocal RSS UI missing: {$needle}\n");$failed++;}}
 foreach(['reciprocal_link_enabled','reciprocal_rss_enabled','allocation_type','reciprocal_rss_distribution_history'] as $needle){if(!str_contains($migration,$needle)){fwrite(STDERR,"FAIL reciprocal RSS migration missing: {$needle}\n");$failed++;}}if(str_contains($migration,'reciprocal_rss_daily_displays')){fwrite(STDERR,"FAIL reciprocal RSS must track outbound accesses, not display counts\n");$failed++;}
@@ -55,6 +61,9 @@ $outEndpoint=(string)file_get_contents(dirname(__DIR__).'/api/out.php');foreach(
 $inquiryAdmin=(string)file_get_contents(dirname(__DIR__).'/admin/inquiries.php');foreach(['unread','reviewing','resolved','WHERE id=? AND site_id=?'] as $needle){if(!str_contains($inquiryAdmin,$needle)){fwrite(STDERR,"FAIL inquiry admin missing: {$needle}\n");$failed++;}}
 $simpleSite=(string)file_get_contents(dirname(__DIR__).'/src/SimpleSiteService.php');foreach(['partitionByUrl','このサイトURLはすでに登録されています','FOR UPDATE'] as $needle){if(!str_contains($simpleSite,$needle)){fwrite(STDERR,"FAIL duplicate site protection missing: {$needle}\n");$failed++;}}
 $sitePage=(string)file_get_contents(dirname(__DIR__).'/admin/site-simple.php');if(!str_contains($sitePage,'重複登録を確認')){fwrite(STDERR,"FAIL duplicate site review UI missing\n");$failed++;}
+foreach(['サイトRSS','管理メールアドレス'] as $removedField){if(str_contains($sitePage,'>'.$removedField.'<')){fwrite(STDERR,"FAIL unnecessary registration field remains: {$removedField}\n");$failed++;}}
+$dashboard=(string)file_get_contents(dirname(__DIR__).'/admin/index.php');foreach(['move_dashboard_site','PV（今日）','サイトへログイン','ORDER BY s.sort_order'] as $needle){if(!str_contains($dashboard,$needle)){fwrite(STDERR,"FAIL dashboard improvement missing: {$needle}\n");$failed++;}}
+foreach(['sort_order','idx_sites_sort',"'schema_version' => '8'"] as $needle){if(!str_contains($migration,$needle)){fwrite(STDERR,"FAIL site order migration missing: {$needle}\n");$failed++;}}
 $searchConsolePage=(string)file_get_contents(dirname(__DIR__).'/admin/personal-settings.php');foreach(['search-console-panel','search-console-form','form-grid','span-2','search-console-table'] as $needle){if(!str_contains($searchConsolePage,$needle)){fwrite(STDERR,"FAIL search console responsive UI missing: {$needle}\n");$failed++;}}
 $adminShell=(string)file_get_contents(dirname(__DIR__).'/assets/admin-shell.css');foreach(['.site-choice strong','color: var(--text);','.search-console-table'] as $needle){if(!str_contains($adminShell,$needle)){fwrite(STDERR,"FAIL admin shell UI safeguard missing: {$needle}\n");$failed++;}}
 $view=(string)file_get_contents(dirname(__DIR__).'/src/View.php');if(!str_contains($view,"self::assetUrl('assets/admin-shell.css')")){fwrite(STDERR,"FAIL admin asset cache busting missing\n");$failed++;}

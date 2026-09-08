@@ -17,22 +17,26 @@ final class SimpleSiteService
      */
     public static function partitionByUrl(array $sites): array
     {
-        $visible = [];
-        $duplicates = [];
-        $seen = [];
-
+        $canonicalIds=[];
         foreach ($sites as $site) {
             $normalized = trim((string) ($site['normalized_url'] ?? ''));
             if ($normalized === '') {
                 $normalized = UrlNormalizer::normalize((string) ($site['url'] ?? ''));
             }
             $key = $normalized !== '' ? $normalized : 'site-id:' . (int) ($site['id'] ?? 0);
-            if (isset($seen[$key])) {
-                $site['canonical_site_id'] = $seen[$key];
+            $id=(int)($site['id']??0);
+            if(!isset($canonicalIds[$key])||$id<$canonicalIds[$key])$canonicalIds[$key]=$id;
+        }
+        $visible=[];$duplicates=[];
+        foreach($sites as $site){
+            $normalized=trim((string)($site['normalized_url']??''));
+            if($normalized==='')$normalized=UrlNormalizer::normalize((string)($site['url']??''));
+            $key=$normalized!==''?$normalized:'site-id:'.(int)($site['id']??0);
+            if((int)($site['id']??0)!==$canonicalIds[$key]){
+                $site['canonical_site_id']=$canonicalIds[$key];
                 $duplicates[] = $site;
                 continue;
             }
-            $seen[$key] = (int) ($site['id'] ?? 0);
             $visible[] = $site;
         }
 
@@ -60,7 +64,8 @@ final class SimpleSiteService
         if ($name === '' || $url === '') throw new \InvalidArgumentException('サイト名とサイトURLを確認してください。');
         $normalizedUrl = UrlNormalizer::normalize($url);
 
-        $rssUrl = self::optionalUrl($data['rss_url'] ?? null, 'サイトRSS');
+        $hasRssUrl = array_key_exists('rss_url', $data);
+        $rssUrl = $hasRssUrl ? self::optionalUrl($data['rss_url'], 'サイトRSS') : null;
         $loginUrl = self::optionalUrl($data['login_url'] ?? null, 'ログインURL');
         $hasSearchConsoleProperty = array_key_exists('search_console_property', $data);
         $searchConsoleProperty = $hasSearchConsoleProperty
@@ -69,16 +74,19 @@ final class SimpleSiteService
         if ($hasSearchConsoleProperty && $searchConsoleProperty !== null && !str_starts_with($searchConsoleProperty, 'sc-domain:') && !filter_var($searchConsoleProperty, FILTER_VALIDATE_URL)) {
             throw new \InvalidArgumentException('Search Consoleプロパティが正しくありません。');
         }
-        $email = trim((string) ($data['admin_email'] ?? ''));
+        $hasAdminEmail = array_key_exists('admin_email', $data);
+        $email = $hasAdminEmail ? trim((string) $data['admin_email']) : '';
         if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new \InvalidArgumentException('管理メールアドレスが正しくありません。');
         $description = Security::cleanText($data['description'] ?? '', 2000) ?: null;
 
         if ($id > 0) {
-            $current = $this->db->prepare('SELECT normalized_url FROM sites WHERE id=?');
+            $current = $this->db->prepare('SELECT normalized_url,rss_url,admin_email FROM sites WHERE id=?');
             $current->execute([$id]);
-            $currentNormalizedUrl = $current->fetchColumn();
-            if ($currentNormalizedUrl === false) throw new \InvalidArgumentException('編集するサイトが見つかりません。');
-            if ((string) $currentNormalizedUrl !== $normalizedUrl) {
+            $currentSite = $current->fetch();
+            if (!$currentSite) throw new \InvalidArgumentException('編集するサイトが見つかりません。');
+            if(!$hasRssUrl)$rssUrl=$currentSite['rss_url']?:null;
+            if(!$hasAdminEmail)$email=(string)($currentSite['admin_email']??'');
+            if ((string) $currentSite['normalized_url'] !== $normalizedUrl) {
                 $this->assertUniqueUrl($normalizedUrl, $id);
             }
             if ($hasSearchConsoleProperty) {
@@ -94,7 +102,7 @@ final class SimpleSiteService
         $this->db->beginTransaction();
         try {
             $this->assertUniqueUrl($normalizedUrl, 0, true);
-            $stmt = $this->db->prepare('INSERT INTO sites (public_id,site_key,name,url,rss_url,search_console_property,login_url,normalized_url,description,admin_email,active,ranking_enabled,links_enabled,rss_enabled,rotation_enabled) VALUES (?,?,?,?,?,?,?,?,?,?,1,1,1,1,1)');
+            $stmt = $this->db->prepare('INSERT INTO sites (sort_order,public_id,site_key,name,url,rss_url,search_console_property,login_url,normalized_url,description,admin_email,active,ranking_enabled,links_enabled,rss_enabled,rotation_enabled) SELECT COALESCE(MAX(sort_order),0)+1,?,?,?,?,?,?,?,?,?,?,1,1,1,1,1 FROM sites');
             $stmt->execute([Security::randomToken(8),Security::randomToken(24),$name,$url,$rssUrl,$searchConsoleProperty,$loginUrl,$normalizedUrl,$description,$email ?: null]);
             $id = (int) $this->db->lastInsertId();
             $this->createDefaultWidgets($id, $name);

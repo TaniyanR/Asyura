@@ -372,6 +372,12 @@ a {
     overflow: hidden;
 }
 
+.site-card-dashboard-link {
+    display: block;
+    color: var(--text);
+    text-decoration: none;
+}
+
 .site-summary-card:hover {
     border-color: #8c8f94;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
@@ -423,10 +429,29 @@ a {
 }
 
 .site-card-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
     padding: 11px 20px;
     border-top: 1px solid #eee;
     color: var(--blue);
     font-weight: 800;
+}
+
+.site-order-actions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.site-order-actions form {
+    margin: 0;
+}
+
+.site-card-foot .button {
+    min-height: 40px;
+    box-sizing: border-box;
 }
 
 /* =========================================================
@@ -1112,6 +1137,21 @@ body.menu-open {
 
     .site-card-stat b {
         font-size: 25px;
+    }
+
+    .site-card-foot .button,
+    .site-order-actions {
+        flex: 1 1 calc(50% - 6px);
+    }
+
+    .site-order-actions {
+        margin-left: 0;
+    }
+
+    .site-order-actions form,
+    .site-order-actions .button {
+        flex: 1;
+        width: 100%;
     }
 
     .form-grid {
