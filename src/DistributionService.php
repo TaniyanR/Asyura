@@ -30,7 +30,7 @@ final class DistributionService
         $days = max(1, (int) ceil($hours / 24));
         $stmt = $this->db->prepare("SELECT l.* FROM reciprocal_links l
             WHERE l.site_id=? AND l.status='approved' AND l.reciprocal_rss_enabled=1
-              AND l.allocation_type<>'excluded' AND l.rss_url IS NOT NULL AND l.rss_url<>''
+              AND l.allocation_type<>'excluded'
               AND EXISTS (SELECT 1 FROM rss_feeds f WHERE f.reciprocal_link_id=l.id AND f.site_id=l.site_id AND f.active=1)
             ORDER BY l.id");
         $stmt->execute([$targetSiteId]);
@@ -103,7 +103,7 @@ final class DistributionService
     }
     private function itemForPartner(int $targetSiteId,int $linkId,bool $imageRequired,array $feedIds,array $used):?array
     {
-        $where=['f.site_id=?','f.reciprocal_link_id=?','f.active=1'];$args=[$targetSiteId,$linkId];if($imageRequired)$where[]="i.image_url IS NOT NULL AND i.image_url<>''";
+        $where=['f.site_id=?','f.reciprocal_link_id=?','f.active=1'];$args=[$targetSiteId,$linkId];if($imageRequired)$where[]='i.image_is_usable=1';
         if($feedIds){$where[]='f.id IN ('.implode(',',array_fill(0,count($feedIds),'?')).')';$args=array_merge($args,$feedIds);}if($used){$where[]='i.id NOT IN ('.implode(',',array_fill(0,count($used),'?')).')';$args=array_merge($args,$used);}
         $stmt=$this->db->prepare('SELECT i.*,l.partner_name site_name,f.name rss_name FROM rss_items i JOIN rss_feeds f ON f.id=i.feed_id JOIN reciprocal_links l ON l.id=f.reciprocal_link_id AND l.site_id=f.site_id WHERE '.implode(' AND ',$where).' ORDER BY i.published_at DESC,i.id DESC LIMIT 50');$stmt->execute($args);$items=$stmt->fetchAll();return$items?$items[random_int(0,count($items)-1)]:null;
     }
