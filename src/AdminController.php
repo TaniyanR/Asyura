@@ -27,6 +27,7 @@ final class AdminController
         try {
             match ($action) {
                 'save_site' => $this->saveSite(),
+                'move_dashboard_site' => $this->moveDashboardSite(),
                 'delete_site' => $this->deleteSite(),
                 'save_feed' => $this->saveFeed(),
                 'delete_feed' => $this->deleteById('rss_feeds'),
@@ -75,6 +76,26 @@ final class AdminController
         } else {
             $service->create($_POST);
         }
+    }
+
+    private function moveDashboardSite(): void
+    {
+        $siteId=(int)($_POST['site_id']??0);
+        $direction=(string)($_POST['direction']??'');
+        if($siteId<1||!in_array($direction,['up','down'],true))throw new \InvalidArgumentException('並び替えの指定が正しくありません。');
+        $this->db->beginTransaction();
+        try{
+            $rows=$this->db->query('SELECT id,url,normalized_url FROM sites ORDER BY sort_order,id FOR UPDATE')->fetchAll();
+            $visible=SimpleSiteService::partitionByUrl($rows)['visible'];
+            $ids=array_map(static fn(array $site):int=>(int)$site['id'],$visible);
+            $position=array_search($siteId,$ids,true);
+            if($position===false)throw new \InvalidArgumentException('並び替えるサイトが見つかりません。');
+            $other=$direction==='up'?$position-1:$position+1;
+            if(isset($ids[$other]))[$ids[$position],$ids[$other]]=[$ids[$other],$ids[$position]];
+            $update=$this->db->prepare('UPDATE sites SET sort_order=? WHERE id=?');
+            foreach($ids as $order=>$id)$update->execute([$order+1,$id]);
+            $this->db->commit();
+        }catch(\Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}
     }
 
     private function saveSiteInfo():void

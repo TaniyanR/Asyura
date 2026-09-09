@@ -5,6 +5,7 @@ require dirname(__DIR__) . '/src/bootstrap.php';
 
 use Asyura\AdminController;
 use Asyura\Auth;
+use Asyura\Security;
 use Asyura\SimpleSiteService;
 use Asyura\View;
 
@@ -23,7 +24,7 @@ if ($page === 'sites') {
 |--------------------------------------------------------------------------
 */
 $asyuraAllSites = $db->query(
-    'SELECT * FROM sites ORDER BY id'
+    'SELECT * FROM sites ORDER BY sort_order, id'
 )->fetchAll();
 $asyuraSitePartition = SimpleSiteService::partitionByUrl($asyuraAllSites);
 $asyuraSites = $asyuraSitePartition['visible'];
@@ -157,7 +158,7 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
 
     echo '<div class="dashboard-intro">';
     echo '<h2>登録サイト</h2>';
-    echo '<p>各サイトの今日のアクセスと申請状況を確認できます。</p>';
+    echo '<p>アクセス数は、今日0:00から現在まで（JST）の集計です。Bot・AI・疑わしいアクセスは含みません。</p>';
     echo '</div>';
 
     if ($asyuraSites === []) {
@@ -180,6 +181,8 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
                 s.id,
                 s.name,
                 s.url,
+                s.login_url,
+                s.sort_order,
                 (
                     SELECT COUNT(*)
                     FROM raw_events re
@@ -224,7 +227,7 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
 
             WHERE s.id IN (" . implode(',', array_fill(0, count($asyuraSites), '?')) . ")
 
-            ORDER BY s.id
+            ORDER BY s.sort_order, s.id
             "
         );
 
@@ -232,7 +235,8 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
 
         echo '<div class="site-card-list">';
 
-        foreach ($stmt->fetchAll() as $row) {
+        $dashboardRows=$stmt->fetchAll();
+        foreach ($dashboardRows as $position=>$row) {
 
             $siteId = (int) $row['id'];
 
@@ -240,7 +244,9 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
                 'admin/?page=dashboard&site=' . $siteId
             );
 
-            echo '<a class="site-summary-card" href="' . e($siteUrl) . '">';
+            $loginUrl=Security::safeUrl((string)($row['login_url']??''));
+            echo '<article class="site-summary-card">';
+            echo '<a class="site-card-dashboard-link" href="' . e($siteUrl) . '">';
 
             /*
             | サイト名
@@ -256,17 +262,17 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
             echo '<div class="site-card-stats">';
 
             echo '<div class="site-card-stat">';
-            echo '<span>PV</span>';
+            echo '<span>PV（今日）</span>';
             echo '<b>' . number_format((int) $row['pv']) . '</b>';
             echo '</div>';
 
             echo '<div class="site-card-stat">';
-            echo '<span>セッション</span>';
+            echo '<span>セッション（今日）</span>';
             echo '<b>' . number_format((int) $row['sessions']) . '</b>';
             echo '</div>';
 
             echo '<div class="site-card-stat">';
-            echo '<span>UU</span>';
+            echo '<span>UU（今日）</span>';
             echo '<b>' . number_format((int) $row['uu']) . '</b>';
             echo '</div>';
 
@@ -277,11 +283,16 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
 
             echo '</div>';
 
-            echo '<div class="site-card-foot">';
-            echo 'このサイトを開く →';
-            echo '</div>';
-
             echo '</a>';
+            echo '<div class="site-card-foot">';
+            echo '<a class="button primary" href="'.e($siteUrl).'">阿修羅で管理</a>';
+            if($loginUrl!=='')echo '<a class="button" href="'.e($loginUrl).'" target="_blank" rel="noopener noreferrer">サイトへログイン ↗</a>';
+            else echo '<a class="button" href="'.e(app_url('admin/?page=sites&edit='.$siteId)).'">ログインURLを登録</a>';
+            echo '<div class="site-order-actions" aria-label="'.e((string)$row['name']).'の表示順">';
+            if($position>0)echo '<form method="post">'.csrf_field().'<input type="hidden" name="action" value="move_dashboard_site"><input type="hidden" name="site_id" value="'.$siteId.'"><input type="hidden" name="direction" value="up"><button class="button" type="submit">↑ 上へ</button></form>';
+            if($position<count($dashboardRows)-1)echo '<form method="post">'.csrf_field().'<input type="hidden" name="action" value="move_dashboard_site"><input type="hidden" name="site_id" value="'.$siteId.'"><input type="hidden" name="direction" value="down"><button class="button" type="submit">↓ 下へ</button></form>';
+            echo '</div></div>';
+            echo '</article>';
         }
 
         echo '</div>';

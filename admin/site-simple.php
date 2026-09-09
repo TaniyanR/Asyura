@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$allSites = $db->query('SELECT * FROM sites ORDER BY id')->fetchAll();
+$allSites = $db->query('SELECT * FROM sites ORDER BY sort_order,id')->fetchAll();
 $sitePartition = SimpleSiteService::partitionByUrl($allSites);
 $sites = $sitePartition['visible'];
 $duplicateSites = $sitePartition['duplicates'];
@@ -41,15 +41,13 @@ if ($editId > 0) {
 }
 
 View::header('サイト登録', 'sites', $sites, null);
-$site = $site ?: ['id'=>0,'name'=>'','url'=>'','rss_url'=>'','login_url'=>'','admin_email'=>'','description'=>''];
+$site = $site ?: ['id'=>0,'name'=>'','url'=>'','login_url'=>'','description'=>''];
 
 echo '<div class="panel simple-site-form"><h2>基本情報</h2><div class="panel-body">';
 echo '<form method="post">' . csrf_field() . '<input type="hidden" name="id" value="' . (int) $site['id'] . '"><div class="form-grid">';
 echo '<label>サイト名<input name="name" value="' . e($site['name']) . '" required></label>';
 echo '<label>サイトURL<input type="url" name="url" value="' . e($site['url']) . '" placeholder="https://example.com/" required></label>';
-echo '<label>サイトRSS<input type="url" name="rss_url" value="' . e($site['rss_url'] ?? '') . '" placeholder="https://example.com/feed/"></label>';
 echo '<label>ログインURL<input type="url" name="login_url" value="' . e($site['login_url'] ?? '') . '" placeholder="https://example.com/admin/"></label>';
-echo '<label class="span-2">管理メールアドレス<input type="email" name="admin_email" value="' . e($site['admin_email'] ?? '') . '"></label>';
 echo '<label class="span-2">説明<textarea name="description" rows="6">' . e($site['description'] ?? '') . '</textarea></label>';
 echo '</div><div class="actions"><button class="button primary" type="submit">保存</button><a class="button" href="' . e(app_url('admin/?page=dashboard')) . '">戻る</a></div></form></div></div>';
 
