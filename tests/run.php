@@ -74,6 +74,6 @@ $crawlerTests=['GPTBot','OAI-SearchBot','ChatGPT-User','ClaudeBot','Claude-User'
 $human=TrafficClassifier::classify('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36');if($human['is_bot']||$human['is_suspicious']){fwrite(STDERR,"FAIL normal browser classified as crawler\n");$failed++;}
 $automated=TrafficClassifier::classify('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0 Safari/537.36',['automation'=>true]);if(!$automated['is_suspicious']){fwrite(STDERR,"FAIL browser automation not held\n");$failed++;}
 $noticePage=(string)file_get_contents(dirname(__DIR__).'/admin/pages.php');if(!str_contains($noticePage,'notice-form-grid')){fwrite(STDERR,"FAIL notice form layout missing\n");$failed++;}
-$contactPage=(string)file_get_contents(dirname(__DIR__).'/admin/contact-settings.php');foreach(['standalone-field','contact-actions','embed-code-section'] as $needle){if(!str_contains($contactPage,$needle)){fwrite(STDERR,"FAIL contact layout missing: {$needle}\n");$failed++;}}
+$contactPage=(string)file_get_contents(dirname(__DIR__).'/admin/contact-settings.php');foreach(['standalone-field','contact-actions','embed-code-section','reciprocal-request-tag','$requestTag',"public/contact.php?site="] as $needle){if(!str_contains($contactPage,$needle)){fwrite(STDERR,"FAIL contact layout missing: {$needle}\n");$failed++;}}
 if(str_contains($view,'elseif (count($sites) === 1)')){fwrite(STDERR,"FAIL global site switcher still shows a site name\n");$failed++;}
 if($failed){exit(1);}echo "All tests passed.\n";
