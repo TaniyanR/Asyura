@@ -1239,6 +1239,12 @@ body.menu-open {
 @media(max-width:900px){.analytics-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.audience-panel,.journey-panel{display:block;width:100%;margin-right:0}.bar-cell{width:38%}}
 @media(max-width:560px){.analytics-toolbar small{width:100%;margin-left:0}.analytics-cards{grid-template-columns:1fr 1fr;gap:9px}.analytics-card{padding:14px 12px}.analytics-card strong{font-size:22px}.daily-chart{height:200px}.daily-chart.days-7{min-width:520px}.daily-chart.days-30{min-width:1080px}.daily-chart.days-90{min-width:2250px}.bar-cell{min-width:110px}}
 
+/* ユーザー属性カード：3列を固定し、画面幅に合わせて整列 */
+.audience-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start;margin-bottom:18px}
+.audience-grid .audience-panel{display:block;width:auto;margin:0}
+@media(max-width:1200px){.audience-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:900px){.audience-grid{grid-template-columns:1fr}}
+
 /* 複数RSS登録 */
 .chart-bar{max-height:calc(100% - 40px)}
 .rss-feed-settings{margin:22px 0;padding:18px;border:1px solid #c3c4c7;border-radius:8px;background:#f6f7f7}.rss-feed-settings legend{padding:0 8px;font-weight:800}.rss-feed-list{display:grid;gap:10px;margin:14px 0}.rss-feed-row{display:grid;grid-template-columns:minmax(150px,.7fr) minmax(260px,1.5fr) auto auto;gap:10px;align-items:end;padding:12px;border:1px solid #dcdcde;border-radius:7px;background:#fff}.rss-feed-row label{margin:0}.rss-feed-active{display:flex;align-items:center;gap:6px;min-height:40px;white-space:nowrap}.rss-feed-remove{margin-bottom:1px}

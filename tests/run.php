@@ -43,6 +43,7 @@ $adminIndex=(string)file_get_contents(dirname(__DIR__).'/admin/index.php');
 foreach(["'search_console'","'notices'","'contact'","'inquiries'","'requests'"] as $needle){if(!str_contains($adminIndex,$needle)){fwrite(STDERR,"FAIL admin route missing: {$needle}\n");$failed++;}}
 $accessReport=(string)file_get_contents(dirname(__DIR__).'/admin/access-report.php');
 foreach(['AnalyticsService','landing_page','exit_page','NOW()-INTERVAL 30 MINUTE','site_id IS NULL','admin_login_failed','is_suspicious=0'] as $needle){if(!str_contains($accessReport,$needle)){fwrite(STDERR,"FAIL access report missing: {$needle}\n");$failed++;}}
+if(!str_contains($accessReport,'class="audience-grid"')){fwrite(STDERR,"FAIL audience cards are not wrapped in a responsive grid\n");$failed++;}
 $auth=(string)file_get_contents(dirname(__DIR__).'/src/Auth.php');
 foreach(['admin_login_failed','admin_login_rate_limit'] as $needle){if(!str_contains($auth,$needle)){fwrite(STDERR,"FAIL auth security log missing: {$needle}\n");$failed++;}}
 $trackerPhp=(string)file_get_contents(dirname(__DIR__).'/src/Tracker.php');
