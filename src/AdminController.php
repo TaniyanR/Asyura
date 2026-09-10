@@ -261,12 +261,12 @@ final class AdminController
         }
     }
 
-    private function createLinkNotice(int $siteId,string $partnerName,string $status):void
+    private function createLinkNotice(int $siteId,string $partnerName,string $status,bool $isPublic=true):void
     {
         $registered=$status==='approved'||$status==='registered';
         $title=$registered?'相互リンク登録完了':'相互リンク解除のお知らせ';
         $body=$registered?$partnerName.'様との相互リンク登録が完了しました。':$partnerName.'様との相互リンクを解除しました。';
-        $this->db->prepare('INSERT INTO notices (site_id,title,body,notice_type,is_public) VALUES (?,?,?,?,1)')->execute([$siteId,$title,$body,$registered?'registered':'removed']);
+        $this->db->prepare('INSERT INTO notices (site_id,title,body,notice_type,is_public) VALUES (?,?,?,?,?)')->execute([$siteId,$title,$body,$registered?'registered':'removed',$isPublic?1:0]);
     }
 
     private function saveWidget(): void
@@ -332,13 +332,39 @@ final class AdminController
     private function updateRequest(): void
     {
         $status = in_array($_POST['status'] ?? '', ['new','reviewing','approved','rejected','registered','removed'], true) ? $_POST['status'] : 'new';
-        $before=$this->db->prepare('SELECT status FROM link_requests WHERE id=? AND site_id=?');$before->execute([(int)$_POST['id'],$this->contextSiteId()]);$oldStatus=(string)$before->fetchColumn();
-        $stmt = $this->db->prepare('UPDATE link_requests SET status=?,public_message=?,removal_reason=?,notify_status_page=?,notify_email=?,publish_notice=? WHERE id=? AND site_id=?');
-        $stmt->execute([$status, Security::cleanText($_POST['public_message'] ?? '', 3000) ?: null, Security::cleanText($_POST['removal_reason'] ?? '', 3000) ?: null, isset($_POST['notify_status_page']) ? 1 : 0, isset($_POST['notify_email']) ? 1 : 0, isset($_POST['publish_notice']) ? 1 : 0, (int) $_POST['id'], $this->contextSiteId()]);
-        $q=$this->db->prepare('SELECT r.*,s.name target_name,s.id target_id FROM link_requests r JOIN sites s ON s.id=r.site_id WHERE r.id=? AND r.site_id=?');$q->execute([(int)$_POST['id'],$this->contextSiteId()]);$request=$q->fetch();
-        $labels=['new'=>'受付完了','reviewing'=>'確認中','approved'=>'承認','rejected'=>'見送り','registered'=>'登録完了','removed'=>'解除完了'];
+        $requestId=(int)($_POST['id']??0);$siteId=$this->contextSiteId();$request=null;$oldStatus='';
+        $this->db->beginTransaction();
+        try {
+            $before=$this->db->prepare('SELECT status FROM link_requests WHERE id=? AND site_id=? FOR UPDATE');$before->execute([$requestId,$siteId]);$oldStatus=(string)$before->fetchColumn();
+            if($oldStatus==='')throw new \InvalidArgumentException('選択中のサイトに、この申請はありません。');
+            $stmt = $this->db->prepare('UPDATE link_requests SET status=?,public_message=?,removal_reason=?,notify_status_page=?,notify_email=?,publish_notice=? WHERE id=? AND site_id=?');
+            $stmt->execute([$status, Security::cleanText($_POST['public_message'] ?? '', 3000) ?: null, Security::cleanText($_POST['removal_reason'] ?? '', 3000) ?: null, isset($_POST['notify_status_page']) ? 1 : 0, isset($_POST['notify_email']) ? 1 : 0, isset($_POST['publish_notice']) ? 1 : 0, $requestId, $siteId]);
+            $q=$this->db->prepare('SELECT r.*,s.name target_name,s.id target_id FROM link_requests r JOIN sites s ON s.id=r.site_id WHERE r.id=? AND r.site_id=?');$q->execute([$requestId,$siteId]);$request=$q->fetch();
+            if(!$request)throw new \InvalidArgumentException('選択中のサイトに、この申請はありません。');
+            if(in_array($status,['approved','registered'],true))$this->syncApprovedRequestLink($request);
+            if($status!==$oldStatus&&in_array($status,['approved','registered','removed'],true))$this->createLinkNotice((int)$request['target_id'],(string)$request['site_name'],$status,(bool)$request['publish_notice']);
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            if($this->db->inTransaction())$this->db->rollBack();
+            throw $e;
+        }
+        $labels=['new'=>'受付完了','reviewing'=>'確認中','approved'=>'承認・登録完了','rejected'=>'見送り','registered'=>'登録完了','removed'=>'解除完了'];
         if($request&&$request['notify_email']){$subject='[阿修羅] '.$labels[$status].' - '.$request['receipt_no'];$body=$request['site_name']." 様\n\n相互リンク依頼の状態が「".$labels[$status]."」に更新されました。\n";if($request['public_message'])$body.="\n".$request['public_message']."\n";if($status==='removed'&&$request['removal_reason'])$body.="\n解除理由：".$request['removal_reason']."\n";$from=str_replace(["\r","\n"],'',(string)($this->config['mail']['from']??'noreply@localhost'));@mail($request['email'],$subject,$body,'From: '.$from."\r\nContent-Type: text/plain; charset=UTF-8");}
-        if($request&&$status!==$oldStatus&&in_array($status,['registered','removed'],true))$this->createLinkNotice((int)$request['target_id'],(string)$request['site_name'],$status);
+    }
+
+    private function syncApprovedRequestLink(array $request):void
+    {
+        $siteId=(int)$request['target_id'];$name=Security::cleanText($request['site_name']??'',255);$url=Security::safeUrl($request['site_url']??'');
+        if($siteId<1||$name===''||$url==='')throw new \InvalidArgumentException('申請サイトの名前またはURLが正しくありません。');
+        $normalizedUrl=UrlNormalizer::normalize($url);$requested=array_values(array_intersect(explode(',',(string)($request['requested_slots']??'')),range('A','E')));$slots=implode(',',$requested)?:'A';
+        $existing=$this->db->prepare('SELECT id FROM reciprocal_links WHERE site_id=? AND normalized_url=? LIMIT 1 FOR UPDATE');$existing->execute([$siteId,$normalizedUrl]);$linkId=(int)$existing->fetchColumn();
+        if($linkId>0){
+            $update=$this->db->prepare("UPDATE reciprocal_links SET partner_name=?,partner_url=?,normalized_url=?,slots=?,status='approved',reciprocal_link_enabled=1 WHERE id=? AND site_id=?");
+            $update->execute([$name,$url,$normalizedUrl,$slots,$linkId,$siteId]);
+            return;
+        }
+        $insert=$this->db->prepare("INSERT INTO reciprocal_links (site_id,partner_name,partner_url,normalized_url,slots,status,reciprocal_link_enabled,reciprocal_rss_enabled,allocation_type) VALUES (?,?,?,?,?,'approved',1,0,'normal')");
+        $insert->execute([$siteId,$name,$url,$normalizedUrl,$slots]);
     }
 
     private function updateInquiryStatus():void
