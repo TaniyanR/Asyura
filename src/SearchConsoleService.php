@@ -39,10 +39,17 @@ final class SearchConsoleService
     {
         $this->ensureSchema();
         $row = $this->db->query('SELECT client_id,client_secret_enc,refresh_token_enc,connected_at FROM search_console_auth WHERE id=1')->fetch() ?: [];
+        $hasClientSecret = !empty($row['client_secret_enc']);
+        $hasRefreshToken = !empty($row['refresh_token_enc']);
+        $clientSecretReadable = $this->canDecrypt((string)($row['client_secret_enc'] ?? ''));
+        $refreshTokenReadable = $this->canDecrypt((string)($row['refresh_token_enc'] ?? ''));
+        $reconnectRequired = ($hasClientSecret && !$clientSecretReadable) || ($hasRefreshToken && !$refreshTokenReadable);
         return [
             'client_id' => (string) ($row['client_id'] ?? ''),
-            'has_client_secret' => !empty($row['client_secret_enc']),
-            'connected' => !empty($row['refresh_token_enc']),
+            'has_client_secret' => $hasClientSecret,
+            'client_secret_readable' => $clientSecretReadable,
+            'connected' => $hasRefreshToken && $clientSecretReadable && $refreshTokenReadable,
+            'reconnect_required' => $reconnectRequired,
             'connected_at' => $row['connected_at'] ?? null,
         ];
     }
@@ -52,11 +59,23 @@ final class SearchConsoleService
         $this->ensureSchema();
         $clientId = trim($clientId);
         if ($clientId === '') throw new \InvalidArgumentException('Google OAuth クライアントIDを入力してください。');
+        $current = $this->db->query('SELECT client_id,client_secret_enc FROM search_console_auth WHERE id=1')->fetch() ?: [];
+        $currentClientId = trim((string)($current['client_id'] ?? ''));
+        $currentSecret = (string)($current['client_secret_enc'] ?? '');
         if ($clientSecret !== null && trim($clientSecret) !== '') {
             $enc = $this->encrypt(trim($clientSecret));
-            $stmt = $this->db->prepare('UPDATE search_console_auth SET client_id=?,client_secret_enc=? WHERE id=1');
+            $stmt = $this->db->prepare('UPDATE search_console_auth SET client_id=?,client_secret_enc=?,access_token_enc=NULL,refresh_token_enc=NULL,token_expires_at=NULL,connected_at=NULL WHERE id=1');
             $stmt->execute([$clientId,$enc]);
         } else {
+            if ($currentSecret === '') {
+                throw new \InvalidArgumentException('Google OAuth クライアントシークレットを入力してください。');
+            }
+            if (!$this->canDecrypt($currentSecret)) {
+                throw new \InvalidArgumentException('保存済みのクライアントシークレットを読み込めません。クライアントシークレットを再入力してください。');
+            }
+            if ($currentClientId !== '' && !hash_equals($currentClientId,$clientId)) {
+                throw new \InvalidArgumentException('クライアントIDを変更する場合は、クライアントシークレットも再入力してください。');
+            }
             $stmt = $this->db->prepare('UPDATE search_console_auth SET client_id=? WHERE id=1');
             $stmt->execute([$clientId]);
         }
@@ -100,6 +119,9 @@ final class SearchConsoleService
         $refresh = (string) ($json['refresh_token'] ?? '');
         if ($refresh === '') {
             $existing = $this->db->query('SELECT refresh_token_enc FROM search_console_auth WHERE id=1')->fetchColumn();
+            if (!is_string($existing) || $existing === '' || !$this->canDecrypt($existing)) {
+                throw new RuntimeException('Googleから再接続用の認証情報を取得できませんでした。もう一度Googleアカウントへ接続してください。');
+            }
             $refreshEnc = $existing ?: null;
         } else {
             $refreshEnc = $this->encrypt($refresh);
@@ -246,5 +268,15 @@ final class SearchConsoleService
         $plain = openssl_decrypt($cipher,'aes-256-gcm',$key,OPENSSL_RAW_DATA,$iv,$tag);
         if ($plain === false) throw new RuntimeException('保存済み認証情報を復号できません。');
         return $plain;
+    }
+
+    private function canDecrypt(string $payload): bool
+    {
+        if ($payload === '') return false;
+        try {
+            return $this->decrypt($payload) !== '';
+        } catch (\Throwable) {
+            return false;
+        }
     }
 }
