@@ -10,8 +10,17 @@ final class SiteMetadataService
     /** @return array{name:string,source:string} */
     public function fetchName(string $url): array
     {
+        $metadata = $this->fetchMetadata($url);
+        return ['name'=>$metadata['name'],'source'=>$metadata['source']];
+    }
+
+    /** @return array{name:string,source:string,feeds:array<int,array{name:string,url:string}>} */
+    public function fetchMetadata(string $url): array
+    {
         $response = $this->fetchHtml($url);
-        return self::extractName($response['html'], $response['url']);
+        $name = self::extractName($response['html'], $response['url']);
+        $name['feeds'] = self::extractFeeds($response['html'], $response['url']);
+        return $name;
     }
 
     /** @return array{name:string,source:string} */
@@ -49,6 +58,51 @@ final class SiteMetadataService
         }
         $host = (string) parse_url($url, PHP_URL_HOST);
         return ['name'=>preg_replace('/^www\./i', '', $host) ?: $host,'source'=>'domain'];
+    }
+
+    /** @return array<int,array{name:string,url:string}> */
+    public static function extractFeeds(string $html, string $pageUrl): array
+    {
+        $encoding = mb_detect_encoding($html, ['UTF-8','SJIS-win','EUC-JP','ISO-2022-JP'], true);
+        if ($encoding !== false && $encoding !== 'UTF-8') $html = mb_convert_encoding($html, 'UTF-8', $encoding);
+        $found = [];
+        if (class_exists(\DOMDocument::class)) {
+            $previous = libxml_use_internal_errors(true);
+            $document = new \DOMDocument();
+            $loaded = $document->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+            if ($loaded) {
+                $xpath = new \DOMXPath($document);
+                $query = "//link[contains(concat(' ',translate(normalize-space(@rel),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),' '),' alternate ') and (contains(translate(@type,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'rss') or contains(translate(@type,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'atom'))]";
+                $nodes = $xpath->query($query);
+                if ($nodes) foreach ($nodes as $node) $found[] = ['href'=>$node->getAttribute('href'),'title'=>$node->getAttribute('title')];
+            }
+        }
+        if (!$found && preg_match_all('~<link\b[^>]*>~isu', $html, $tags)) {
+            foreach ($tags[0] as $tag) {
+                $attributes = self::tagAttributes($tag);
+                $rel = strtolower($attributes['rel'] ?? '');
+                $type = strtolower($attributes['type'] ?? '');
+                if (!str_contains(' '.$rel.' ', ' alternate ') || (!str_contains($type,'rss') && !str_contains($type,'atom'))) continue;
+                $found[] = ['href'=>$attributes['href'] ?? '','title'=>$attributes['title'] ?? ''];
+            }
+        }
+        $feeds = [];
+        foreach ($found as $candidate) {
+            $url = Security::safeUrl(self::absoluteUrl($pageUrl, html_entity_decode((string)$candidate['href'], ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+            if ($url === '' || preg_match('~(?:/comments?/feed/?|[?&](?:with)?comments?=)~i', $url)) continue;
+            $key = strtolower(rtrim($url, '/'));
+            if (isset($feeds[$key])) continue;
+            $title = self::cleanName((string)$candidate['title']);
+            if ($title !== '' && preg_match('/コメント|comments?/iu', $title)) continue;
+            $feeds[$key] = ['name'=>$title,'url'=>$url];
+            if (count($feeds) >= 20) break;
+        }
+        $feeds = array_values($feeds);
+        foreach ($feeds as $index => &$feed) if ($feed['name'] === '') $feed['name'] = count($feeds) > 1 ? 'RSS '.($index+1) : 'RSS';
+        unset($feed);
+        return $feeds;
     }
 
     /** @return array{html:string,url:string} */
@@ -97,7 +151,7 @@ final class SiteMetadataService
             // サイト名は通常head内にあるため、上限へ達した場合は先頭512KBだけを解析する。
             if ($ok === false && !$tooLarge) throw new \RuntimeException('サイトへ接続できません：'.$error);
             if (in_array($status, [301,302,303,307,308], true) && isset($headers['location'])) {
-                $current = $this->resolveUrl($current, $headers['location']);
+                $current = self::absoluteUrl($current, $headers['location']);
                 continue;
             }
             if ($status < 200 || $status >= 300) throw new \RuntimeException('サイトを取得できません（HTTP '.$status.'）。');
@@ -128,7 +182,7 @@ final class SiteMetadataService
         return ['host'=>$host,'ip'=>$ips[0],'port'=>$port];
     }
 
-    private function resolveUrl(string $base, string $location): string
+    private static function absoluteUrl(string $base, string $location): string
     {
         $location = trim($location);
         if (preg_match('~^https?://~i', $location)) return $location;
@@ -139,6 +193,16 @@ final class SiteMetadataService
         if (str_starts_with($location, '/')) return $origin.$location;
         $directory = rtrim(dirname($parts['path'] ?? '/'), '/');
         return $origin.($directory !== '' ? $directory : '').'/'.$location;
+    }
+
+    /** @return array<string,string> */
+    private static function tagAttributes(string $tag): array
+    {
+        $attributes = [];
+        if (preg_match_all('~([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(["\'])(.*?)\2~isu', $tag, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) $attributes[strtolower($match[1])] = html_entity_decode($match[3], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
+        return $attributes;
     }
 
     private static function xpathValue(\DOMXPath $xpath, string $query): string
