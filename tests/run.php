@@ -78,4 +78,11 @@ $contactPage=(string)file_get_contents(dirname(__DIR__).'/admin/contact-settings
 $requestController=(string)file_get_contents(dirname(__DIR__).'/src/AdminController.php');foreach(['syncApprovedRequestLink',"status='approved'",'reciprocal_link_enabled=1','$slots=implode','$requested','(bool)$request[\'publish_notice\']'] as $needle){if(!str_contains($requestController,$needle)){fwrite(STDERR,"FAIL approved request auto-registration missing: {$needle}\n");$failed++;}}
 $requestAdmin=(string)file_get_contents(dirname(__DIR__).'/admin/pages.php');if(!str_contains($requestAdmin,'承認して自動登録')){fwrite(STDERR,"FAIL request approval UI does not explain auto-registration\n");$failed++;}
 if(str_contains($view,'elseif (count($sites) === 1)')){fwrite(STDERR,"FAIL global site switcher still shows a site name\n");$failed++;}
+$settingsTransfer=(string)file_get_contents(dirname(__DIR__).'/src/SettingsTransferService.php');
+foreach(['asyura-settings-backup','reciprocal_links','rss_feeds','feed_urls','conversion_rules','beginTransaction','rollBack'] as $needle){if(!str_contains($settingsTransfer,$needle)){fwrite(STDERR,"FAIL settings transfer missing: {$needle}\n");$failed++;}}
+$dataPage=(string)file_get_contents(dirname(__DIR__).'/admin/pages.php');
+foreach(['設定データのバックアップ・復元','export_settings.php','import_settings.php','バックアップ対象外'] as $needle){if(!str_contains($dataPage,$needle)){fwrite(STDERR,"FAIL settings transfer UI missing: {$needle}\n");$failed++;}}
+foreach(['admin/export_settings.php','admin/import_settings.php'] as $relative){if(!is_file(dirname(__DIR__).'/'.$relative)){fwrite(STDERR,"FAIL settings transfer endpoint missing: {$relative}\n");$failed++;}}
+$adminShell=(string)file_get_contents(dirname(__DIR__).'/assets/admin-shell.css');
+foreach(['.rss-feed-row>label:not(.rss-feed-active)','textarea[name="template_html"]','min-height:260px','.settings-transfer-grid'] as $needle){if(!str_contains($adminShell,$needle)){fwrite(STDERR,"FAIL RSS/settings transfer UI style missing: {$needle}\n");$failed++;}}
 if($failed){exit(1);}echo "All tests passed.\n";
