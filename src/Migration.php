@@ -212,10 +212,15 @@ final class Migration
                 reciprocal_rss_enabled TINYINT(1) NOT NULL DEFAULT 0,
                 rss_url VARCHAR(2048) NULL,
                 allocation_type ENUM('normal','priority_120','priority_150','priority_200','special','rescue','excluded') NOT NULL DEFAULT 'normal',
+                site_check_status VARCHAR(20) NULL,
+                site_http_status SMALLINT UNSIGNED NULL,
+                site_check_error VARCHAR(1000) NULL,
+                site_checked_at DATETIME NULL,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 CONSTRAINT fk_link_site FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
-                INDEX idx_link_site_status (site_id, status)
+                INDEX idx_link_site_status (site_id, status),
+                INDEX idx_link_health_due (site_checked_at,site_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS rss_feeds (
                 id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -514,7 +519,7 @@ final class Migration
         }
 
         $defaults = [
-            'schema_version' => '8',
+            'schema_version' => '9',
             'ranking_period_days' => '3',
             'distribution_window_hours' => '24',
             'raw_retention_days' => '180',
@@ -743,8 +748,24 @@ final class Migration
             if((int)$indexExists->fetchColumn()===0)$db->exec('ALTER TABLE sites ADD INDEX idx_sites_sort (sort_order,id)');
         }
 
+        if ($version < 9) {
+            $linkHealthColumns = [
+                'site_check_status' => 'ALTER TABLE reciprocal_links ADD COLUMN site_check_status VARCHAR(20) NULL AFTER allocation_type',
+                'site_http_status' => 'ALTER TABLE reciprocal_links ADD COLUMN site_http_status SMALLINT UNSIGNED NULL AFTER site_check_status',
+                'site_check_error' => 'ALTER TABLE reciprocal_links ADD COLUMN site_check_error VARCHAR(1000) NULL AFTER site_http_status',
+                'site_checked_at' => 'ALTER TABLE reciprocal_links ADD COLUMN site_checked_at DATETIME NULL AFTER site_check_error',
+            ];
+            foreach ($linkHealthColumns as $column => $sql) {
+                $exists->execute(['reciprocal_links',$column]);
+                if ((int)$exists->fetchColumn() === 0) $db->exec($sql);
+            }
+            $indexExists=$db->prepare('SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND INDEX_NAME=?');
+            $indexExists->execute(['reciprocal_links','idx_link_health_due']);
+            if((int)$indexExists->fetchColumn()===0)$db->exec('ALTER TABLE reciprocal_links ADD INDEX idx_link_health_due (site_checked_at,site_id)');
+        }
+
         $stmt = $db->prepare(
-            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','8')
+            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','9')
              ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)"
         );
         $stmt->execute();

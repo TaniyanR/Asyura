@@ -76,6 +76,7 @@ $allowed = [
     'access',
     'tracking_tag',
     'links',
+    'partners',
     'ranking',
     'site_info',
     'settings',
@@ -130,6 +131,7 @@ $titles = [
     'access'    => $accessTitles[$report] ?? $accessTitles['traffic'],
     'tracking_tag' => '計測タグ',
     'links'     => '相互リンクサイト登録',
+    'partners'  => '相互リンク一覧',
     'ranking'   => '逆アクセスランキング',
     'site_info' => 'サイト情報',
     'settings'  => '個人設定',
@@ -391,6 +393,9 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
         $db,
         $config
     );
+
+} elseif ($page === 'partners') {
+    require __DIR__ . '/partners.php';
 
 /*
 |--------------------------------------------------------------------------
