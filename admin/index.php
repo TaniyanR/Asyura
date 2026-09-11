@@ -85,6 +85,7 @@ $allowed = [
     'inquiries',
     'requests',
     'rss',
+    'data',
 ];
 
 if (!in_array($page, $allowed, true)) {
@@ -96,7 +97,7 @@ if (!in_array($page, $allowed, true)) {
 | サイト未選択時
 |--------------------------------------------------------------------------
 */
-if ($asyuraCurrentSite === null && !in_array($page, ['dashboard','search_console'], true)) {
+if ($asyuraCurrentSite === null && !in_array($page, ['dashboard','search_console','data'], true)) {
     $page = 'dashboard';
 }
 
@@ -138,6 +139,7 @@ $titles = [
     'inquiries' => 'お問い合わせ受信一覧',
     'requests' => '相互リンク申請一覧',
     'rss' => '相互RSS設定',
+    'data' => 'データ管理',
 ];
 
 View::header(
@@ -360,6 +362,9 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
 
 } elseif ($page === 'search_console') {
     require __DIR__ . '/personal-settings.php';
+
+} elseif ($page === 'data') {
+    asyura_page_data($db, $config);
 
 } elseif ($page === 'contact') {
     require __DIR__ . '/contact-settings.php';
