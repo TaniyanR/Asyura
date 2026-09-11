@@ -2,6 +2,28 @@ document.addEventListener('click',function(e){var b=e.target.closest('[data-copy
 document.addEventListener('submit',function(e){var f=e.target;if(!f.matches('[data-confirm]'))return;var message=f.dataset.confirm||'実行しますか？';if(!window.confirm(message))e.preventDefault()});
 
 document.addEventListener('click',function(e){
+    var button=e.target.closest('[data-fetch-site-name]');
+    if(!button)return;
+    var form=button.closest('form');
+    var urlInput=form&&form.querySelector('[data-partner-url]');
+    var nameInput=form&&form.querySelector('[data-partner-name]');
+    var result=form&&form.querySelector('[data-site-name-result]');
+    var csrf=form&&form.querySelector('input[name="csrf_token"]');
+    if(!urlInput||!nameInput||!csrf)return;
+    if(!urlInput.reportValidity())return;
+    var oldText=button.textContent;
+    button.disabled=true;
+    button.textContent='取得中…';
+    if(result){result.textContent='相手サイトを確認しています。';result.classList.remove('is-error','is-success')}
+    var data=new FormData();data.append('url',urlInput.value);data.append('csrf_token',csrf.value);
+    fetch(button.dataset.endpoint,{method:'POST',body:data,credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}})
+        .then(function(response){return response.json().catch(function(){throw new Error('サーバーから正しい応答がありません。')}).then(function(json){if(!response.ok||!json.ok)throw new Error(json.message||'サイト名を取得できませんでした。');return json})})
+        .then(function(json){nameInput.value=json.name;nameInput.focus();nameInput.select();if(result){result.textContent=json.source==='domain'?'ページ内にサイト名がなかったため、ドメイン名を入力しました。':'サイト名を取得しました。必要なら修正してください。';result.classList.add('is-success')}})
+        .catch(function(error){if(result){result.textContent=error.message;result.classList.add('is-error')}})
+        .finally(function(){button.disabled=false;button.textContent=oldText});
+});
+
+document.addEventListener('click',function(e){
     var toggle=e.target.closest('[data-nav-toggle]');
     if(!toggle)return;
     var group=toggle.closest('[data-nav-group]');
