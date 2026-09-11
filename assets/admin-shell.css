@@ -504,8 +504,10 @@ a {
     margin-bottom: 24px;
 }
 
-.site-name-fetch-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center}.site-name-fetch-row .button{min-height:40px;white-space:nowrap}.site-name-fetch-result{display:block;margin-top:6px;color:#646970;font-weight:400}.site-name-fetch-result.is-success{color:#0a5c23}.site-name-fetch-result.is-error{color:#b32d2e;font-weight:700}
+.site-name-fetch-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;margin-top:10px}.site-name-fetch-row .button{min-height:40px;padding-inline:16px;white-space:nowrap}.site-name-fetch-result{display:block;margin-top:8px;color:#646970;font-weight:400}.site-name-fetch-result.is-success{color:#0a5c23}.site-name-fetch-result.is-error{color:#b32d2e;font-weight:700}
 @media(max-width:700px){.site-name-fetch-row{grid-template-columns:1fr}.site-name-fetch-row .button{width:100%}}
+
+.widget-name-field{display:grid;gap:11px;max-width:720px;margin:0 0 22px;font-weight:800}.widget-name-field input{width:100%;min-height:44px;padding:10px 12px}.widget-design-form>.panel{margin-bottom:26px}.widget-design-form .panel-body>.checks{margin-bottom:22px}.widget-save-actions,.partner-save-actions{gap:14px;margin-top:28px;padding-top:20px;border-top:1px solid #dcdcde}.widget-save-actions .button,.partner-save-actions .button{min-height:44px;padding:10px 18px}.link-display-count-note{grid-column:1/-1;margin:0}
 
 .reciprocal-form-panel {
     margin-bottom: 28px;

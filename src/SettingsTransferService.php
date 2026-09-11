@@ -282,7 +282,7 @@ final class SettingsTransferService
     private function email(mixed $value):?string{$value=trim((string)$value);return$value!==''&&filter_var($value,FILTER_VALIDATE_EMAIL)?$value:null;}
     private function optionalUrl(mixed $value):?string{$value=Security::safeUrl((string)$value);return$value!==''?$value:null;}
     private function property(mixed $value):?string{$value=trim((string)$value);return str_starts_with($value,'sc-domain:')||Security::safeUrl($value)!==''?$value:null;}
-    private function slots(mixed $value):string{$slots=array_values(array_intersect(range('A','E'),explode(',',strtoupper((string)$value))));return$slots?implode(',',$slots):'A';}
+    private function slots(mixed $value):string{$slots=array_values(array_intersect(range('A','J'),explode(',',strtoupper((string)$value))));return$slots?implode(',',$slots):'A';}
     private function dimension(mixed $value,string $default):string{$value=trim((string)$value);return preg_match('/^(auto|\d+(?:\.\d+)?(?:px|%|rem|em|vh|vw)?)$/',$value)?$value:$default;}
     private function urlKey(string $url):string{return strtolower(rtrim($url,'/'));}
 }

@@ -192,6 +192,7 @@ final class AdminController
         $feedNames = (array) ($_POST['rss_feed_name'] ?? []);
         $feedUrls = (array) ($_POST['rss_feed_url'] ?? []);
         $feedActive = (array) ($_POST['rss_feed_active'] ?? []);
+        $id = (int) ($_POST['id'] ?? 0);
         $rssFeeds = [];
         foreach ($feedUrls as $index => $rawFeedUrl) {
             $rawFeedUrl = trim((string) $rawFeedUrl);
@@ -205,14 +206,30 @@ final class AdminController
                 'active' => isset($feedActive[$index]) ? 1 : 0,
             ];
         }
+        if ($id === 0 && $rssFeeds === []) {
+            try {
+                $metadata = (new SiteMetadataService())->fetchMetadata($url);
+                foreach ((array)($metadata['feeds'] ?? []) as $feed) {
+                    $feedUrl = Security::safeUrl($feed['url'] ?? '');
+                    if ($feedUrl === '') continue;
+                    $rssFeeds[] = [
+                        'id' => 0,
+                        'name' => Security::cleanText($feed['name'] ?? '', 255),
+                        'url' => $feedUrl,
+                        'active' => 1,
+                    ];
+                }
+            } catch (\Throwable $e) {
+                error_log('[Asyura reciprocal RSS discovery] '.$e->getMessage());
+            }
+        }
         $activeFeeds = array_filter($rssFeeds, static fn(array $feed): bool => $feed['active'] === 1);
         if ($rssEnabled && !$activeFeeds) throw new \InvalidArgumentException('相互RSSを利用する場合は、使用するRSS URLを1件以上入力してください。');
         $firstActiveFeed = $activeFeeds ? reset($activeFeeds) : null;
         $rssUrl = is_array($firstActiveFeed) ? (string) $firstActiveFeed['url'] : ($rssFeeds[0]['url'] ?? null);
         $allocationTypes = ['normal','priority_120','priority_150','priority_200','special','rescue','excluded'];
         $allocationType = in_array($_POST['allocation_type'] ?? '', $allocationTypes, true) ? (string) $_POST['allocation_type'] : 'normal';
-        $slots = array_values(array_intersect((array) ($_POST['slots'] ?? []), range('A', 'E')));
-        $id = (int) ($_POST['id'] ?? 0);
+        $slots = array_values(array_intersect((array) ($_POST['slots'] ?? []), range('A', 'J')));
         $old = null;
         if ($id > 0) {
             $oldStmt = $this->db->prepare('SELECT * FROM reciprocal_links WHERE id=? AND site_id=?');
@@ -285,13 +302,13 @@ final class AdminController
     private function saveWidget(): void
     {
         $id = (int) ($_POST['id'] ?? 0);
-        $check=$this->db->prepare('SELECT COUNT(*) FROM widgets WHERE id=? AND site_id=?');$check->execute([$id,$this->contextSiteId()]);if(!(int)$check->fetchColumn())throw new \InvalidArgumentException('選択中のサイトにこの表示パーツはありません。');
+        $check=$this->db->prepare('SELECT type,item_limit FROM widgets WHERE id=? AND site_id=?');$check->execute([$id,$this->contextSiteId()]);$widget=$check->fetch();if(!$widget)throw new \InvalidArgumentException('選択中のサイトにこの表示パーツはありません。');
         $feedIds=array_values(array_filter(array_map('intval',(array)($_POST['feed_ids']??[])),static fn(int $id):bool=>$id>0));
         $configJson=json_encode(['image_required'=>isset($_POST['image_required']),'feed_ids'=>$feedIds],JSON_UNESCAPED_UNICODE);
         $stmt = $this->db->prepare('UPDATE widgets SET name=?,enabled=?,item_limit=?,width=?,height=?,template_html=?,custom_css=?,config_json=? WHERE id=?');
         $stmt->execute([
             Security::cleanText($_POST['name'] ?? '', 255), isset($_POST['enabled']) ? 1 : 0,
-            min(100, max(1, (int) ($_POST['item_limit'] ?? 10))),
+            $widget['type']==='links'?(int)$widget['item_limit']:min(100, max(1, (int) ($_POST['item_limit'] ?? 10))),
             Security::cleanText($_POST['width'] ?? '100%', 30), Security::cleanText($_POST['height'] ?? 'auto', 30),
             $this->sanitizeTemplate((string) ($_POST['template_html'] ?? '')),
             $this->sanitizeCss((string) ($_POST['custom_css'] ?? '')), $configJson, $id,
@@ -369,7 +386,7 @@ final class AdminController
     {
         $siteId=(int)$request['target_id'];$name=Security::cleanText($request['site_name']??'',255);$url=Security::safeUrl($request['site_url']??'');
         if($siteId<1||$name===''||$url==='')throw new \InvalidArgumentException('申請サイトの名前またはURLが正しくありません。');
-        $normalizedUrl=UrlNormalizer::normalize($url);$requested=array_values(array_intersect(explode(',',(string)($request['requested_slots']??'')),range('A','E')));$slots=implode(',',$requested)?:'A';
+        $normalizedUrl=UrlNormalizer::normalize($url);$requested=array_values(array_intersect(explode(',',(string)($request['requested_slots']??'')),range('A','J')));$slots=implode(',',$requested)?:'A';
         $existing=$this->db->prepare('SELECT id FROM reciprocal_links WHERE site_id=? AND normalized_url=? LIMIT 1 FOR UPDATE');$existing->execute([$siteId,$normalizedUrl]);$linkId=(int)$existing->fetchColumn();
         if($linkId>0){
             $update=$this->db->prepare("UPDATE reciprocal_links SET partner_name=?,partner_url=?,normalized_url=?,slots=?,status='approved',reciprocal_link_enabled=1 WHERE id=? AND site_id=?");
