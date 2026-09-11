@@ -32,6 +32,7 @@ final class AdminController
                 'save_feed' => $this->saveFeed(),
                 'delete_feed' => $this->deleteById('rss_feeds'),
                 'save_link' => $this->saveLink(),
+                'check_reciprocal_health' => $this->checkReciprocalHealth(),
                 'delete_link' => $this->deleteById('reciprocal_links'),
                 'save_widget' => $this->saveWidget(),
                 'save_notice' => $this->saveNotice(),
@@ -55,7 +56,7 @@ final class AdminController
                 'save_contact_settings' => $this->saveContactSettings(),
                 default => throw new \InvalidArgumentException('操作が正しくありません。'),
             };
-            View::flash('保存しました。');
+            if (empty($_SESSION['flash'])) View::flash('保存しました。');
         } catch (\InvalidArgumentException $e) {
             View::flash($e->getMessage(), 'error');
         } catch (\Throwable $e) {
@@ -76,6 +77,18 @@ final class AdminController
         } else {
             $service->create($_POST);
         }
+    }
+
+    private function checkReciprocalHealth(): void
+    {
+        $siteId=$this->contextSiteId();$linkId=(int)($_POST['id']??0);
+        if($linkId<1)throw new \InvalidArgumentException('確認する相互リンク先が正しくありません。');
+        $health=(new ReciprocalHealthService($this->db))->check($linkId,$siteId);
+        $feedStmt=$this->db->prepare('SELECT * FROM rss_feeds WHERE site_id=? AND reciprocal_link_id=? AND active=1 ORDER BY id');
+        $feedStmt->execute([$siteId,$linkId]);$rssService=new RssService($this->db);$rssSuccess=0;$rssFailed=0;
+        foreach($feedStmt as$feed){try{$rssService->fetchOne($feed);$rssSuccess++;}catch(\Throwable$e){$rssFailed++;$this->db->prepare('UPDATE rss_feeds SET last_fetched_at=NOW(),last_error=? WHERE id=? AND site_id=?')->execute([mb_substr($e->getMessage(),0,1000),(int)$feed['id'],$siteId]);}}
+        $siteLabel=in_array($health['status'],['ok','redirected','restricted'],true)?'確認できました':'確認できませんでした';
+        View::flash('サイトは'.$siteLabel.'。RSS成功 '.$rssSuccess.'件／失敗 '.$rssFailed.'件。',$health['status']==='missing'||$health['status']==='error'?'error':'success');
     }
 
     private function moveDashboardSite(): void

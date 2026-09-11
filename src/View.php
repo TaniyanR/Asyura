@@ -252,7 +252,7 @@ final class View
             */
             $linkOpen = in_array(
                 $active,
-                ['links', 'ranking', 'requests', 'rss'],
+                ['links', 'partners', 'ranking', 'requests', 'rss'],
                 true
             );
 
@@ -279,6 +279,8 @@ final class View
                     )
                 ) . '"
             >› 相互リンクサイト登録</a>';
+
+            echo '<a class="nav-child'.($active==='partners'?' active':'').'" href="'.e(app_url('admin/?page=partners'.$siteQuery)).'">› 相互リンク一覧</a>';
 
             echo '<a class="nav-child'.($active==='requests'?' active':'').'" href="'.e(app_url('admin/?page=requests'.$siteQuery)).'">› 相互リンク申請一覧</a>';
 
