@@ -1,27 +1,47 @@
 document.addEventListener('click',function(e){var b=e.target.closest('[data-copy]');if(!b)return;var el=document.querySelector(b.dataset.copy);if(!el)return;navigator.clipboard.writeText(el.textContent).then(function(){var old=b.textContent;b.textContent='コピーしました';setTimeout(function(){b.textContent=old},1400)})});
 document.addEventListener('submit',function(e){var f=e.target;if(!f.matches('[data-confirm]'))return;var message=f.dataset.confirm||'実行しますか？';if(!window.confirm(message))e.preventDefault()});
 
-document.addEventListener('click',function(e){
-    var button=e.target.closest('[data-fetch-site-name]');
-    if(!button)return;
-    var form=button.closest('form');
-    var urlInput=form&&form.querySelector('[data-partner-url]');
-    var nameInput=form&&form.querySelector('[data-partner-name]');
-    var result=form&&form.querySelector('[data-site-name-result]');
-    var csrf=form&&form.querySelector('input[name="csrf_token"]');
-    if(!urlInput||!nameInput||!csrf)return;
-    if(!urlInput.reportValidity())return;
-    var oldText=button.textContent;
-    button.disabled=true;
-    button.textContent='取得中…';
-    if(result){result.textContent='相手サイトを確認しています。';result.classList.remove('is-error','is-success')}
-    var data=new FormData();data.append('url',urlInput.value);data.append('csrf_token',csrf.value);
-    fetch(button.dataset.endpoint,{method:'POST',body:data,credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}})
-        .then(function(response){return response.json().catch(function(){throw new Error('サーバーから正しい応答がありません。')}).then(function(json){if(!response.ok||!json.ok)throw new Error(json.message||'サイト名を取得できませんでした。');return json})})
-        .then(function(json){nameInput.value=json.name;nameInput.focus();nameInput.select();if(result){result.textContent=json.source==='domain'?'ページ内にサイト名がなかったため、ドメイン名を入力しました。':'サイト名を取得しました。必要なら修正してください。';result.classList.add('is-success')}})
-        .catch(function(error){if(result){result.textContent=error.message;result.classList.add('is-error')}})
-        .finally(function(){button.disabled=false;button.textContent=oldText});
-});
+(function(){
+    function domainName(value){try{return new URL(value).hostname.replace(/^www\./i,'')}catch(error){return''}}
+    function canReplaceName(input,url){var value=input.value.trim();return value===''||value.toLowerCase()===domainName(url).toLowerCase()}
+    function hasManualFeeds(form){return Array.from(form.querySelectorAll('.rss-feed-row')).some(function(row){var input=row.querySelector('input[name^="rss_feed_url"]');return input&&input.value.trim()!==''&&row.dataset.autoMetadata!=='1'})}
+    function addFeedRow(form,feed,index){
+        var list=form.querySelector('[data-rss-feed-list]');var template=form.querySelector('[data-rss-feed-template]');if(!list||!template)return;
+        var key='auto'+Date.now()+index;list.insertAdjacentHTML('beforeend',template.innerHTML.replaceAll('__INDEX__',key));
+        var row=list.lastElementChild;row.dataset.autoMetadata='1';row.querySelector('input[name^="rss_feed_name"]').value=feed.name||'RSS';row.querySelector('input[name^="rss_feed_url"]').value=feed.url||'';
+    }
+    function applyFeeds(form,feeds){
+        if(hasManualFeeds(form))return -1;
+        var list=form.querySelector('[data-rss-feed-list]');if(!list)return 0;
+        list.innerHTML='';
+        if(feeds.length){feeds.forEach(function(feed,index){addFeedRow(form,feed,index)});return feeds.length}
+        addFeedRow(form,{name:'',url:''},0);return 0;
+    }
+    function loadMetadata(form,force){
+        if(!form)return;
+        var button=form.querySelector('[data-fetch-site-name]');var urlInput=form.querySelector('[data-partner-url]');var nameInput=form.querySelector('[data-partner-name]');var result=form.querySelector('[data-site-name-result]');var csrf=form.querySelector('input[name="csrf_token"]');
+        if(!button||!urlInput||!nameInput||!csrf||button.disabled)return;
+        if(!urlInput.reportValidity())return;
+        var requestUrl=urlInput.value.trim();var replaceName=force||canReplaceName(nameInput,requestUrl);var oldText=button.textContent;
+        button.disabled=true;button.textContent='取得中…';
+        if(result){result.textContent='サイト名とRSSを確認しています。';result.classList.remove('is-error','is-success')}
+        var data=new FormData();data.append('url',requestUrl);data.append('csrf_token',csrf.value);
+        fetch(button.dataset.endpoint,{method:'POST',body:data,credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}})
+            .then(function(response){return response.json().catch(function(){throw new Error('サーバーから正しい応答がありません。')}).then(function(json){if(!response.ok||!json.ok)throw new Error(json.message||'サイト情報を取得できませんでした。');return json})})
+            .then(function(json){
+                if(urlInput.value.trim()!==requestUrl)return;
+                if(replaceName)nameInput.value=json.name;
+                var count=applyFeeds(form,Array.isArray(json.feeds)?json.feeds:[]);
+                var feedMessage=count<0?' 手入力済みのRSSは変更していません。':(count?' RSSを'+count+'件入力しました。':' 公開RSSは見つかりませんでした。');
+                if(result){result.textContent=(replaceName?'サイト名を入力しました。':'手入力済みのサイト名は変更していません。')+feedMessage;result.classList.add('is-success')}
+            })
+            .catch(function(error){if(result){result.textContent=error.message;result.classList.add('is-error')}})
+            .finally(function(){button.disabled=false;button.textContent=oldText});
+    }
+    document.addEventListener('click',function(e){var button=e.target.closest('[data-fetch-site-name]');if(button)loadMetadata(button.closest('form'),true)});
+    document.addEventListener('change',function(e){if(!e.target.matches('[data-partner-url]'))return;var form=e.target.closest('[data-partner-metadata-form]');if(form)loadMetadata(form,false)});
+    document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[data-partner-metadata-form][data-new-link="1"]').forEach(function(form){var url=form.querySelector('[data-partner-url]');if(url&&url.value.trim()!=='')loadMetadata(form,false)})});
+})();
 
 document.addEventListener('click',function(e){
     var toggle=e.target.closest('[data-nav-toggle]');
