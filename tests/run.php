@@ -5,9 +5,11 @@ require dirname(__DIR__).'/src/UrlNormalizer.php';
 require dirname(__DIR__).'/src/TrafficClassifier.php';
 require dirname(__DIR__).'/src/Security.php';
 require dirname(__DIR__).'/src/SimpleSiteService.php';
+require dirname(__DIR__).'/src/SiteMetadataService.php';
 
 use Asyura\Security;
 use Asyura\SimpleSiteService;
+use Asyura\SiteMetadataService;
 use Asyura\TrafficClassifier;
 use Asyura\UrlNormalizer;
 
@@ -92,4 +94,11 @@ foreach(['INTERVAL 12 HOUR','FILTER_FLAG_NO_PRIV_RANGE','CURLOPT_RESOLVE','WHERE
 foreach(['site_check_status','site_http_status','site_check_error','site_checked_at','idx_link_health_due'] as $needle){if(!str_contains($migration,$needle)){fwrite(STDERR,"FAIL reciprocal health migration missing: {$needle}\n");$failed++;}}
 foreach(["'partners'",'相互リンク一覧'] as $needle){if(!str_contains($adminIndex,$needle)||!str_contains($view,$needle)){fwrite(STDERR,"FAIL reciprocal list navigation missing: {$needle}\n");$failed++;}}
 foreach(['.partner-health-list','.partner-health-summary','.health-badge.danger'] as $needle){if(!str_contains($adminShell,$needle)){fwrite(STDERR,"FAIL reciprocal list responsive style missing: {$needle}\n");$failed++;}}
+$metadata=SiteMetadataService::extractName('<html><head><title>タイトルの名前</title><meta property="og:site_name" content="優先するサイト名"></head></html>','https://example.com/');
+if($metadata['name']!=='優先するサイト名'||$metadata['source']!=='og:site_name'){fwrite(STDERR,"FAIL site metadata priority\n");$failed++;}
+$metadataFallback=SiteMetadataService::extractName('<html><body>no title</body></html>','https://www.example.com/');
+if($metadataFallback['name']!=='example.com'||$metadataFallback['source']!=='domain'){fwrite(STDERR,"FAIL site metadata domain fallback\n");$failed++;}
+$metadataService=(string)file_get_contents(dirname(__DIR__).'/src/SiteMetadataService.php');foreach(['og:site_name','application-name','MAX_BYTES','FILTER_FLAG_NO_PRIV_RANGE','CURLOPT_RESOLVE'] as $needle){if(!str_contains($metadataService,$needle)){fwrite(STDERR,"FAIL safe site metadata fetch missing: {$needle}\n");$failed++;}}
+$metadataEndpoint=(string)file_get_contents(dirname(__DIR__).'/admin/fetch_site_name.php');foreach(['requireLogin','verifyCsrf','SiteMetadataService'] as $needle){if(!str_contains($metadataEndpoint,$needle)){fwrite(STDERR,"FAIL site metadata endpoint missing: {$needle}\n");$failed++;}}
+foreach(['data-fetch-site-name','data-partner-url','data-partner-name'] as $needle){if(!str_contains($reciprocalPage,$needle)){fwrite(STDERR,"FAIL site name fetch UI missing: {$needle}\n");$failed++;}}
 if($failed){exit(1);}echo "All tests passed.\n";

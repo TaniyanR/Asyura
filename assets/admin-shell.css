@@ -504,6 +504,9 @@ a {
     margin-bottom: 24px;
 }
 
+.site-name-fetch-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center}.site-name-fetch-row .button{min-height:40px;white-space:nowrap}.site-name-fetch-result{display:block;margin-top:6px;color:#646970;font-weight:400}.site-name-fetch-result.is-success{color:#0a5c23}.site-name-fetch-result.is-error{color:#b32d2e;font-weight:700}
+@media(max-width:700px){.site-name-fetch-row{grid-template-columns:1fr}.site-name-fetch-row .button{width:100%}}
+
 .reciprocal-form-panel {
     margin-bottom: 28px;
 }
