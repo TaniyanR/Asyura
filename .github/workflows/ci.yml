@@ -18,9 +18,17 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: pdo_mysql, mbstring, curl, simplexml, zip
+          extensions: pdo_mysql, pdo_sqlite, mbstring, curl, simplexml, zip
           coverage: none
       - name: PHP syntax
         run: find . -name '*.php' -print0 | xargs -0 -n1 php -l
       - name: Unit tests
-        run: php tests/run.php
+        run: |
+          php tests/run.php
+          php tests/widgets.php
+      - name: Widget JavaScript checks
+        run: |
+          node --check assets/widget-preview.js
+          node --check assets/widget-embed.js
+          node --check assets/widget-resize.js
+          node tests/widget-scripts.cjs

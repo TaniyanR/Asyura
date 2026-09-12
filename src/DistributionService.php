@@ -29,8 +29,8 @@ final class DistributionService
         $hours = max(1, (int) setting('distribution_window_hours', 24));
         $days = max(1, (int) ceil($hours / 24));
         $stmt = $this->db->prepare("SELECT l.* FROM reciprocal_links l
-            WHERE l.site_id=? AND l.status='approved' AND l.reciprocal_rss_enabled=1
-              AND l.allocation_type<>'excluded'
+            WHERE l.site_id=? AND l.status='approved' AND (l.reciprocal_link_enabled=1 OR l.reciprocal_rss_enabled=1)
+              AND l.is_excluded=0 AND l.allocation_type<>'excluded'
               AND EXISTS (SELECT 1 FROM rss_feeds f WHERE f.reciprocal_link_id=l.id AND f.site_id=l.site_id AND f.active=1)
             ORDER BY l.id");
         $stmt->execute([$targetSiteId]);

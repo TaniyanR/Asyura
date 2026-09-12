@@ -53,10 +53,10 @@ if(!$links){echo '<div class="empty-state"><strong>相互リンク先はまだ�
 echo '<div class="partner-health-list">';
 foreach($links as$link){
     $feedStmt->execute([$siteId,(int)$link['id']]);$feeds=$feedStmt->fetchAll();$hasWarning=false;
-    $isFetchTarget=!empty($link['reciprocal_rss_enabled'])&&$link['status']==='approved'&&$link['allocation_type']!=='excluded';
+    $isFetchTarget=(!empty($link['reciprocal_link_enabled'])||!empty($link['reciprocal_rss_enabled']))&&empty($link['is_excluded'])&&$link['status']==='approved'&&$link['allocation_type']!=='excluded';
     foreach($feeds as$feed){[$feedClass]=asyura_rss_health($feed,$isFetchTarget);if(in_array($feedClass,['warning','danger'],true))$hasWarning=true;}
     if(in_array((string)($link['site_check_status']??''),['missing','error'],true))$hasWarning=true;
-    $features=[];if(!empty($link['reciprocal_link_enabled']))$features[]='相互リンク';if(!empty($link['reciprocal_rss_enabled']))$features[]='相互RSS';
+    $features=[];if(!empty($link['is_excluded']))$features[]='除外中';if(!empty($link['reciprocal_link_enabled']))$features[]='相互リンク';if(!empty($link['reciprocal_rss_enabled']))$features[]='相互RSS';
     echo '<article class="partner-health-card'.($hasWarning?' has-warning':'').'">';
     echo '<header><div><h3>'.e($link['partner_name']).'</h3><a href="'.e($link['partner_url']).'" target="_blank" rel="noopener noreferrer">'.e($link['partner_url']).'</a></div>'.asyura_site_health_badge($link).'</header>';
     $latestLabel=!empty($link['latest_article_at'])?asyura_health_datetime($link['latest_article_at']):(empty($link['article_count'])?'記事未取得':'記事日時なし');

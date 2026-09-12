@@ -63,6 +63,9 @@ final class AdminController
             error_log('[Asyura admin] '.$e->getMessage());
             View::flash('処理中にエラーが発生しました。入力内容とサーバーログを確認してください。', 'error');
         }
+        if ($action === 'save_widget' && in_array($_GET['page'] ?? '', ['rss','ranking','links'], true)) {
+            redirect(app_url('admin/?page='.rawurlencode((string)$_GET['page']).'&site='.(int)($_SESSION['admin_site_id']??0).'&widgets=1&edit='.(int)($_POST['id']??0)));
+        }
         $siteId = (int) ($_SESSION['admin_site_id'] ?? 0);
         $pageName=(string)($_GET['page']??'dashboard');$report=(string)($_GET['report']??'');$days=(int)($_GET['days']??0);$inquiryId=$pageName==='inquiries'?(int)($_GET['id']??0):0;
         redirect(app_url('admin/?page=' . urlencode($pageName) . ($siteId > 0 ? '&site=' . $siteId : '') . ($report!==''?'&report='.rawurlencode($report):'') . (in_array($days,[7,30,90],true)?'&days='.$days:'') . ($inquiryId>0?'&id='.$inquiryId:'')));
@@ -244,7 +247,7 @@ final class AdminController
             UrlNormalizer::normalize($url), Security::cleanText($_POST['description'] ?? '', 2000) ?: null,
             $old['category'] ?? null, implode(',', $slots), $status, $old['rel_type'] ?? 'follow',
             isset($_POST['open_new_tab']) ? 1 : 0, $legacyPriority,
-            $allocationType === 'special' ? 1 : 0, $allocationType === 'rescue' ? 1 : 0, $allocationType === 'excluded' ? 1 : 0,
+            $allocationType === 'special' ? 1 : 0, $allocationType === 'rescue' ? 1 : 0, isset($_POST['is_excluded']) ? 1 : 0,
             isset($_POST['reciprocal_link_enabled']) ? 1 : 0, $rssEnabled ? 1 : 0, $rssUrl ?: null, $allocationType,
         ];
         $this->db->beginTransaction();
@@ -302,14 +305,16 @@ final class AdminController
     private function saveWidget(): void
     {
         $id = (int) ($_POST['id'] ?? 0);
-        $check=$this->db->prepare('SELECT type,item_limit FROM widgets WHERE id=? AND site_id=?');$check->execute([$id,$this->contextSiteId()]);$widget=$check->fetch();if(!$widget)throw new \InvalidArgumentException('選択中のサイトにこの表示パーツはありません。');
-        $feedIds=array_values(array_filter(array_map('intval',(array)($_POST['feed_ids']??[])),static fn(int $id):bool=>$id>0));
-        $configJson=json_encode(['image_required'=>isset($_POST['image_required']),'feed_ids'=>$feedIds],JSON_UNESCAPED_UNICODE);
+        $check=$this->db->prepare('SELECT type,item_limit,width,height,config_json FROM widgets WHERE id=? AND site_id=?');$check->execute([$id,$this->contextSiteId()]);$widget=$check->fetch();if(!$widget)throw new \InvalidArgumentException('選択中のサイトにこの表示パーツはありません。');
+        $widgetConfig=json_decode((string)$widget['config_json'],true)?:[];
+        unset($widgetConfig['feed_ids']);
+        $widgetConfig['image_required']=isset($_POST['image_required']);
+        $configJson=json_encode($widgetConfig,JSON_UNESCAPED_UNICODE);
         $stmt = $this->db->prepare('UPDATE widgets SET name=?,enabled=?,item_limit=?,width=?,height=?,template_html=?,custom_css=?,config_json=? WHERE id=?');
         $stmt->execute([
             Security::cleanText($_POST['name'] ?? '', 255), isset($_POST['enabled']) ? 1 : 0,
             $widget['type']==='links'?(int)$widget['item_limit']:min(100, max(1, (int) ($_POST['item_limit'] ?? 10))),
-            Security::cleanText($_POST['width'] ?? '100%', 30), Security::cleanText($_POST['height'] ?? 'auto', 30),
+            $widget['width'], $widget['height'],
             $this->sanitizeTemplate((string) ($_POST['template_html'] ?? '')),
             $this->sanitizeCss((string) ($_POST['custom_css'] ?? '')), $configJson, $id,
         ]);

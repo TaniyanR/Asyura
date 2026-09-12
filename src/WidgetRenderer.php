@@ -23,12 +23,12 @@ final class WidgetRenderer
         $days=(int)setting('ranking_period_days',3);
         $stmt=$this->db->prepare('SELECT referrer_host title,SUM(inbound) in_count,SUM(unique_inbound) unique_inbound FROM referrer_stats WHERE site_id=? AND stat_date>=CURDATE()-INTERVAL ? DAY GROUP BY referrer_host ORDER BY in_count DESC LIMIT ?');
         $stmt->bindValue(1,(int)$widget['site_id'],PDO::PARAM_INT);$stmt->bindValue(2,max(0,$days-1),PDO::PARAM_INT);$stmt->bindValue(3,min(500,(int)$widget['item_limit']*10),PDO::PARAM_INT);$stmt->execute();
-        $excluded=$this->db->query('SELECT pattern,match_type FROM excluded_referrers WHERE active=1')->fetchAll();$siteMap=[];foreach($this->db->query('SELECT name,url,is_excluded FROM sites') as $s)$siteMap[UrlNormalizer::host($s['url'])]=['title'=>$s['name'],'url'=>$s['url'],'excluded'=>(bool)$s['is_excluded']];$linkMap=[];$mapStmt=$this->db->prepare("SELECT partner_name,partner_url,is_excluded FROM reciprocal_links WHERE site_id=? AND status='approved'");$mapStmt->execute([$widget['site_id']]);foreach($mapStmt as $l)$linkMap[UrlNormalizer::host($l['partner_url'])]=['title'=>$l['partner_name'],'url'=>$l['partner_url'],'excluded'=>(bool)$l['is_excluded']];$outMap=$this->outboundMap((int)$widget['site_id'],$days);$rows=[];$rank=0;foreach($stmt as $row){$skip=false;foreach($excluded as $rule){$skip=match($rule['match_type']){'exact'=>$row['title']===$rule['pattern'],'contains'=>str_contains($row['title'],$rule['pattern']),default=>$row['title']===$rule['pattern']||str_ends_with($row['title'],'.'.$rule['pattern'])};if($skip)break;}$mapped=$siteMap[$row['title']]??$linkMap[$row['title']]??null;if($mapped&&$mapped['excluded'])$skip=true;if($skip)continue;$rank++;$url=$mapped['url']??'https://'.$row['title'].'/';$title=$mapped['title']??$row['title'];$rows[]=['rank'=>$rank,'title'=>$title,'url'=>$url,'in_count'=>$row['in_count'],'out_count'=>$outMap[$row['title']]??0];if($rank>=(int)$widget['item_limit'])break;}return $rows;
+        $excluded=$this->db->query('SELECT pattern,match_type FROM excluded_referrers WHERE active=1')->fetchAll();$siteMap=[];foreach($this->db->query('SELECT name,url,is_excluded FROM sites') as $s)$siteMap[UrlNormalizer::host($s['url'])]=['title'=>$s['name'],'url'=>$s['url'],'excluded'=>(bool)$s['is_excluded']];$linkMap=[];$mapStmt=$this->db->prepare("SELECT partner_name,partner_url,is_excluded FROM reciprocal_links WHERE site_id=? AND (status='approved' OR is_excluded=1)");$mapStmt->execute([$widget['site_id']]);foreach($mapStmt as $l)$linkMap[UrlNormalizer::host($l['partner_url'])]=['title'=>$l['partner_name'],'url'=>$l['partner_url'],'excluded'=>(bool)$l['is_excluded']];$outMap=$this->outboundMap((int)$widget['site_id'],$days);$rows=[];$rank=0;foreach($stmt as $row){$skip=false;foreach($excluded as $rule){$skip=match($rule['match_type']){'exact'=>$row['title']===$rule['pattern'],'contains'=>str_contains($row['title'],$rule['pattern']),default=>$row['title']===$rule['pattern']||str_ends_with($row['title'],'.'.$rule['pattern'])};if($skip)break;}$mapped=$linkMap[$row['title']]??$siteMap[$row['title']]??null;if(($mapped&&$mapped['excluded'])||!empty($siteMap[$row['title']]['excluded']))$skip=true;if($skip)continue;$rank++;$url=$mapped['url']??'https://'.$row['title'].'/';$title=$mapped['title']??$row['title'];$rows[]=['rank'=>$rank,'title'=>$title,'url'=>$url,'in_count'=>$row['in_count'],'out_count'=>$outMap[$row['title']]??0];if($rank>=(int)$widget['item_limit'])break;}return $rows;
     }
 
     public function links(array $widget): array
     {
-        $slot=$widget['slot_code'];$stmt=$this->db->prepare("SELECT * FROM reciprocal_links WHERE site_id=? AND status='approved' AND reciprocal_link_enabled=1 AND FIND_IN_SET(?,slots)>0 ORDER BY id DESC");
+        $slot=$widget['slot_code'];$stmt=$this->db->prepare("SELECT * FROM reciprocal_links WHERE site_id=? AND status='approved' AND reciprocal_link_enabled=1 AND is_excluded=0 AND FIND_IN_SET(?,slots)>0 ORDER BY id DESC");
         $stmt->execute([(int)$widget['site_id'],$slot]);$outMap=$this->outboundMap((int)$widget['site_id'],30);$rows=[];$rank=0;foreach($stmt as $r){$rank++;$host=UrlNormalizer::host($r['partner_url']);$rows[]=['rank'=>$rank,'title'=>$r['partner_name'],'url'=>$r['partner_url'],'description'=>$r['description'],'category'=>$r['category'],'in_count'=>0,'out_count'=>$outMap[$host]??0,'rel'=>$r['rel_type'],'target'=>$r['open_new_tab']?'_blank':'_self'];}return $rows;
     }
 
@@ -36,7 +36,7 @@ final class WidgetRenderer
     {
         $config=json_decode((string)$widget['config_json'],true)?:[];
         $imageRequired=str_starts_with((string)$widget['slot_code'],'IMAGE-')||!empty($config['image_required']);
-        return (new DistributionService($this->db))->chooseItems((int)$widget['site_id'],(int)$widget['item_limit'],$imageRequired,array_map('intval',(array)($config['feed_ids']??[])));
+        return (new DistributionService($this->db))->chooseItems((int)$widget['site_id'],(int)$widget['item_limit'],$imageRequired);
     }
 
     public function notices(array $widget): array
@@ -47,6 +47,7 @@ final class WidgetRenderer
 
     public function render(array $widget, array $items): string
     {
+        $widget=WidgetDesign::withDefaults($widget);
         $out='';$rank=0;foreach($items as $item){$rank++;$url=(string)($item['url']??'');$safeUrl=$this->outUrl((int)$widget['id'],$url);$image=Security::safeUrl($item['image_url']??'');$imageTag=$image?'<img src="'.e($image).'" alt="" loading="lazy">':'';$map=[
             '{rank}'=>(string)($item['rank']??$rank),'{title}'=>e($item['title']??''),'{url}'=>e($safeUrl),
             '{description}'=>e($item['description']??''),'{category}'=>e($item['category']??''),
