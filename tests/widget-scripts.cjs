@@ -70,3 +70,24 @@ assert.equal(appended[0].src,'https://asyura.example/sub/assets/widget-embed.js'
 vm.runInNewContext(boot,trackerContext);
 assert.equal(appended.length,1);
 console.log('OK existing tracker loads resize helper once and preserves installation subdirectory');
+const clickHandlers={};const beacons=[];const fallback=[];
+const directLink={href:'https://partner.example/article?a=1&b=2'};
+const clickBox={contains(link){return link===directLink;},addEventListener(type,fn){clickHandlers[type]=fn;}};
+const clickContext={
+  document:{querySelector(){return clickBox;},getElementById(){return {textContent:JSON.stringify({[directLink.href]:'https://asyura.example/api/out.php?wid=1&sig=test'})};}},
+  location:{origin:'https://asyura.example',href:'https://asyura.example/widgets/rss.php?id=test'},
+  navigator:{sendBeacon(url){beacons.push(url);return true;}},
+  window:{fetch:true},fetch(url,options){fallback.push(options);return Promise.resolve();},URL,Map,JSON,Object
+};
+vm.runInNewContext(script('widget-clicks.js'),clickContext);
+const click={type:'click',button:0,isTrusted:true,defaultPrevented:false,target:{closest(){return directLink;}}};
+clickHandlers.click(click);
+assert.equal(beacons.length,1);assert.equal(directLink.href,'https://partner.example/article?a=1&b=2');
+clickHandlers.auxclick({...click,type:'auxclick',button:1});assert.equal(beacons.length,2);
+clickHandlers.auxclick({...click,type:'auxclick',button:2});
+clickHandlers.click({...click,isTrusted:false});clickHandlers.click({...click,defaultPrevented:true});
+assert.equal(beacons.length,2);
+clickContext.navigator.sendBeacon=()=>false;clickHandlers.click(click);
+assert.equal(fallback.length,1);assert.equal(fallback[0].method,'POST');assert.equal(fallback[0].keepalive,true);
+assert.equal(directLink.href,'https://partner.example/article?a=1&b=2');
+console.log('OK direct links remain intact with non-blocking click/middle-click measurement and fetch fallback');

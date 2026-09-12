@@ -48,7 +48,7 @@ final class WidgetRenderer
     public function render(array $widget, array $items): string
     {
         $widget=WidgetDesign::withDefaults($widget);
-        $out='';$rank=0;foreach($items as $item){$rank++;$url=(string)($item['url']??'');$safeUrl=$this->outUrl((int)$widget['id'],$url);$image=Security::safeUrl($item['image_url']??'');$imageTag=$image?'<img src="'.e($image).'" alt="" loading="lazy">':'';$map=[
+        $out='';$rank=0;foreach($items as $item){$rank++;$url=(string)($item['url']??'');$safeUrl=Security::safeUrl($url)?:'#';$image=Security::safeUrl($item['image_url']??'');$imageTag=$image?'<img src="'.e($image).'" alt="" loading="lazy">':'';$map=[
             '{rank}'=>(string)($item['rank']??$rank),'{title}'=>e($item['title']??''),'{url}'=>e($safeUrl),
             '{description}'=>e($item['description']??''),'{category}'=>e($item['category']??''),
             '{in_count}'=>number_format((int)($item['in_count']??0)),'{out_count}'=>number_format((int)($item['out_count']??0)),
@@ -57,6 +57,17 @@ final class WidgetRenderer
             '{rel}'=>e($item['rel']??'nofollow'),'{target}'=>e($item['target']??'_blank'),
         ];$out.=strtr((string)$widget['template_html'],$map);}
         return $out;
+    }
+
+    /** Signed measurement endpoints are separate from the public link href. */
+    public function clickTargets(array $widget, array $items): array
+    {
+        $targets=[];
+        foreach ($items as $item) {
+            $url=Security::safeUrl((string)($item['url']??''));
+            if ($url !== '') $targets[$url]=$this->outUrl((int)$widget['id'],$url);
+        }
+        return $targets;
     }
 
     private function outUrl(int $widgetId,string $url):string
