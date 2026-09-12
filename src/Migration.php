@@ -519,7 +519,7 @@ final class Migration
         }
 
         $defaults = [
-            'schema_version' => '9',
+            'schema_version' => '10',
             'ranking_period_days' => '3',
             'distribution_window_hours' => '24',
             'raw_retention_days' => '180',
@@ -764,8 +764,18 @@ final class Migration
             if((int)$indexExists->fetchColumn()===0)$db->exec('ALTER TABLE reciprocal_links ADD INDEX idx_link_health_due (site_checked_at,site_id)');
         }
 
+        if ($version < 10) {
+            $sites = $db->query('SELECT id FROM sites')->fetchAll(PDO::FETCH_COLUMN);
+            $widget = $db->prepare('INSERT IGNORE INTO widgets (site_id,public_id,type,slot_code,name,item_limit,template_html,custom_css) VALUES (?,?,?,?,?,?,?,?)');
+            foreach ($sites as $siteId) {
+                foreach (range('F','J') as $slot) {
+                    $widget->execute([(int)$siteId,Security::randomToken(8),'links',$slot,'相互リンク '.$slot,20,'<a href="{url}" rel="{rel}" target="{target}">{title}</a>','.asyura-links{font-size:14px}']);
+                }
+            }
+        }
+
         $stmt = $db->prepare(
-            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','9')
+            "INSERT INTO settings (setting_key,setting_value) VALUES ('schema_version','10')
              ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)"
         );
         $stmt->execute();

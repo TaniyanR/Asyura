@@ -28,8 +28,8 @@ final class WidgetRenderer
 
     public function links(array $widget): array
     {
-        $slot=$widget['slot_code'];$stmt=$this->db->prepare("SELECT * FROM reciprocal_links WHERE site_id=? AND status='approved' AND reciprocal_link_enabled=1 AND FIND_IN_SET(?,slots)>0 ORDER BY id DESC LIMIT ?");
-        $stmt->bindValue(1,(int)$widget['site_id'],PDO::PARAM_INT);$stmt->bindValue(2,$slot);$stmt->bindValue(3,(int)$widget['item_limit'],PDO::PARAM_INT);$stmt->execute();$outMap=$this->outboundMap((int)$widget['site_id'],30);$rows=[];$rank=0;foreach($stmt as $r){$rank++;$host=UrlNormalizer::host($r['partner_url']);$rows[]=['rank'=>$rank,'title'=>$r['partner_name'],'url'=>$r['partner_url'],'description'=>$r['description'],'category'=>$r['category'],'in_count'=>0,'out_count'=>$outMap[$host]??0,'rel'=>$r['rel_type'],'target'=>$r['open_new_tab']?'_blank':'_self'];}return $rows;
+        $slot=$widget['slot_code'];$stmt=$this->db->prepare("SELECT * FROM reciprocal_links WHERE site_id=? AND status='approved' AND reciprocal_link_enabled=1 AND FIND_IN_SET(?,slots)>0 ORDER BY id DESC");
+        $stmt->execute([(int)$widget['site_id'],$slot]);$outMap=$this->outboundMap((int)$widget['site_id'],30);$rows=[];$rank=0;foreach($stmt as $r){$rank++;$host=UrlNormalizer::host($r['partner_url']);$rows[]=['rank'=>$rank,'title'=>$r['partner_name'],'url'=>$r['partner_url'],'description'=>$r['description'],'category'=>$r['category'],'in_count'=>0,'out_count'=>$outMap[$host]??0,'rel'=>$r['rel_type'],'target'=>$r['open_new_tab']?'_blank':'_self'];}return $rows;
     }
 
     public function rss(array $widget): array
