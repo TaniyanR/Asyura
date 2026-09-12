@@ -31,4 +31,5 @@ jobs:
           node --check assets/widget-preview.js
           node --check assets/widget-embed.js
           node --check assets/widget-resize.js
+          node --check assets/widget-clicks.js
           node tests/widget-scripts.cjs
