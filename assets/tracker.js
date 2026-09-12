@@ -5,6 +5,15 @@
   var script=document.currentScript;if(!script)return;
   var site=script.dataset.siteId||'',key=script.dataset.siteKey||'';if(!site||!key)return;
   var src=new URL(script.src),endpoint=src.origin+src.pathname.replace(/\/assets\/tracker\.js$/,'/api/collect.php');
+  // Existing tracker tags also enable resizing for legacy iframe-only widgets.
+  if(!window.__asyuraEmbedLoaded&&!window.__asyuraEmbedLoading){
+    window.__asyuraEmbedLoading=true;
+    var embedScript=document.createElement('script');
+    embedScript.src=src.origin+src.pathname.replace(/\/assets\/tracker\.js$/,'/assets/widget-embed.js');
+    embedScript.async=true;
+    embedScript.onerror=function(){window.__asyuraEmbedLoading=false;};
+    (document.head||document.documentElement).appendChild(embedScript);
+  }
   var randomId=function(){if(window.crypto&&window.crypto.randomUUID)return window.crypto.randomUUID().replace(/-/g,'');var a=new Uint8Array(16);if(window.crypto&&window.crypto.getRandomValues)window.crypto.getRandomValues(a);else for(var i=0;i<a.length;i++)a[i]=Math.floor(Math.random()*256);return Array.from(a,function(v){return v.toString(16).padStart(2,'0')}).join('')};
   var cookieGet=function(name){var prefix=encodeURIComponent(name)+'=';var parts=document.cookie?document.cookie.split('; '):[];for(var i=0;i<parts.length;i++)if(parts[i].indexOf(prefix)===0)return decodeURIComponent(parts[i].slice(prefix.length));return''};
   var cookieSet=function(name,value,maxAge){try{document.cookie=encodeURIComponent(name)+'='+encodeURIComponent(value)+'; Path=/; Max-Age='+maxAge+'; SameSite=Lax'}catch(_){}};
