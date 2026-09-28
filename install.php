@@ -55,6 +55,7 @@ if ($installed) {
 }
 
 $repairMode = $installed && !$dbReachable;
+$recoverConfig = !$installed && ($_POST['setup_mode'] ?? 'recover') !== 'new';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
     if (!Security::verifyCsrf($_POST['csrf_token'] ?? null)) {
@@ -75,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
                 try {
                     $db = new PDO($dsn, $user, $pass, $pdoOptions);
                 } catch (PDOException $e) {
-                    if ($installed || (int) ($e->errorInfo[1] ?? 0) !== 1049) {
+                    if ($installed || $recoverConfig || (int) ($e->errorInfo[1] ?? 0) !== 1049) {
                         throw $e;
                     }
                     $serverDsn = sprintf('mysql:host=%s;port=%d;charset=utf8mb4', $host, $port);
@@ -85,12 +86,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
                     $db = new PDO($dsn, $user, $pass, $pdoOptions);
                 }
 
+                if ($recoverConfig) {
+                    \Asyura\ConfigRecovery::validate($db, ($_POST['reset_google_auth'] ?? '') === 'yes');
+                }
+
                 $config = $existingConfig;
                 $config['app_url'] = $config['app_url'] ?? $appUrl;
                 if (empty($config['app_key'])) {
                     $authTable = $db->query("SHOW TABLES LIKE 'search_console_auth'")->fetchColumn();
-                    if ($authTable && $db->query("SELECT COUNT(*) FROM search_console_auth WHERE COALESCE(client_secret_enc,'')<>'' OR COALESCE(refresh_token_enc,'')<>''")->fetchColumn()) {
-                        throw new RuntimeException('保存済みGoogle認証情報がありますが暗号鍵がありません。新しい鍵は作成しません。以前のconfig/config.phpをバックアップから復元してください。');
+                    if (!$recoverConfig && $authTable && $db->query("SELECT COUNT(*) FROM search_console_auth WHERE COALESCE(client_secret_enc,'')<>'' OR COALESCE(refresh_token_enc,'')<>''")->fetchColumn()) {
+                        throw new InvalidArgumentException('保存済みGoogle認証情報があります。元のconfig/config.phpを復元するか、「既存DBから設定を復旧」を選びGoogle認証の再設定に同意してください。');
                     }
                     $config['app_key'] = Security::randomToken(32);
                 }
@@ -99,10 +104,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
                 $config['cron_key'] = $config['cron_key'] ?? Security::randomToken(24);
                 $config['mail'] = $config['mail'] ?? ['from' => 'noreply@localhost', 'from_name' => '阿修羅'];
 
-                Migration::run($db);
+                if (!$recoverConfig) Migration::run($db);
 
                 $needsPasswordSetup = false;
-                if (!$installed) {
+                if (!$installed && !$recoverConfig) {
                     $adminCount = (int) $db->query('SELECT COUNT(*) FROM admins')->fetchColumn();
                     if ($adminCount === 0) {
                         $temporaryPassword = Security::randomToken(48);
@@ -122,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
                 }
                 @chmod($configPath, 0640);
 
-                if ($repairMode) {
+                if ($repairMode || $recoverConfig) {
                     header('Location: ' . $appUrl . '/login.php?db_repaired=1');
                 } elseif ($needsPasswordSetup) {
                     header('Location: ' . $appUrl . '/setup.php');
@@ -130,25 +135,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
                     header('Location: ' . $appUrl . '/login.php?installed=1');
                 }
                 exit;
+            } catch (InvalidArgumentException $e) {
+                $error = $e->getMessage();
             } catch (Throwable $e) {
                 $error = $installed
                     ? 'データベースへ接続できませんでした。DB情報を確認してください。'
-                    : 'インストールできませんでした。DB情報とconfigフォルダの書き込み権限を確認してください。';
+                    : '設定を保存できませんでした。既存のDB名・DBユーザー・DBパスワードとconfigフォルダの書き込み権限を確認してください。';
             }
         }
     }
 }
 
-$defaultDbName = (string) (($existingConfig['db']['name'] ?? '') ?: 'asyura');
-$defaultDbUser = (string) (($existingConfig['db']['user'] ?? '') ?: 'root');
+$defaultDbName = (string) ($_POST['db_name'] ?? (($existingConfig['db']['name'] ?? '') ?: 'asyura'));
+$defaultDbUser = (string) ($_POST['db_user'] ?? (($existingConfig['db']['user'] ?? '') ?: 'root'));
 ?>
 <!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>阿修羅 インストール</title><link rel="stylesheet" href="assets/admin.css"><link rel="stylesheet" href="assets/admin-refined.css"></head><body class="login-body">
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>阿修羅 DB接続設定</title><link rel="stylesheet" href="assets/admin.css"><link rel="stylesheet" href="assets/admin-refined.css"></head><body class="login-body">
 <main class="install-card"><div class="brand-mark">阿</div><h1>阿修羅</h1><p class="muted">アクセス解析・相互管理ツール</p>
 <?php if ($installed && $dbReachable): ?>
 <div class="notice success">阿修羅はインストール済みです。<a href="login.php">ログイン画面へ</a></div>
 <?php else: ?>
 <?php if ($repairMode): ?><div class="notice warning">データベースへ接続できません。接続情報を確認して保存してください。既存データは初期化しません。</div><?php endif; ?>
 <?php if ($error): ?><div class="notice error"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div><?php endif; ?>
-<form method="post" autocomplete="off"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Security::csrfToken(), ENT_QUOTES, 'UTF-8') ?>"><h2>データベース</h2><div class="form-grid"><label>DB名<input name="db_name" value="<?= htmlspecialchars($defaultDbName, ENT_QUOTES, 'UTF-8') ?>" required></label><label>DBユーザー<input name="db_user" value="<?= htmlspecialchars($defaultDbUser, ENT_QUOTES, 'UTF-8') ?>" required></label><label class="span-2">DBパスワード<input name="db_pass" type="password" autocomplete="new-password"></label></div><?php if ($repairMode): ?><p class="description">DB接続情報だけを更新します。</p><?php endif; ?><button class="button primary" type="submit"><?= $repairMode ? 'DB接続情報を保存' : 'インストールする' ?></button></form>
+<form method="post" autocomplete="off"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Security::csrfToken(), ENT_QUOTES, 'UTF-8') ?>"><h2>データベース</h2><?php if (!$installed): ?>
+<fieldset><legend>設定方法</legend>
+<label><input type="radio" name="setup_mode" value="recover" <?= $recoverConfig ? 'checked' : '' ?>> 既存DBから設定を復旧</label>
+<label><input type="radio" name="setup_mode" value="new" <?= !$recoverConfig ? 'checked' : '' ?>> 新規インストール</label>
+</fieldset>
+<p>復旧では登録サイト・アクセス集計・既存の管理者パスワードを保持し、config.phpを再作成します。</p>
+<label><input type="checkbox" name="reset_google_auth" value="yes" <?= ($_POST['reset_google_auth'] ?? '') === 'yes' ? 'checked' : '' ?>> 元のconfig.phpがないため、新しい暗号鍵を作成し、Google認証を再設定する</label>
+<p class="description">復旧後は今までの管理者アカウントでログインしてください。cronを使用している場合は、復旧後のcron用キーに合わせて実行URLも更新してください。</p>
+<?php endif; ?><div class="form-grid"><label>DB名<input name="db_name" value="<?= htmlspecialchars($defaultDbName, ENT_QUOTES, 'UTF-8') ?>" required></label><label>DBユーザー<input name="db_user" value="<?= htmlspecialchars($defaultDbUser, ENT_QUOTES, 'UTF-8') ?>" required></label><label class="span-2">DBパスワード<input name="db_pass" type="password" autocomplete="new-password"></label></div><?php if ($repairMode): ?><p class="description">DB接続情報だけを更新します。</p><?php endif; ?><button class="button primary" type="submit">DB接続設定を保存</button></form>
 <?php endif; ?></main></body></html>
