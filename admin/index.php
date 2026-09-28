@@ -296,6 +296,7 @@ if ($page === 'dashboard' && $asyuraCurrentSite === null) {
             if($position>0)echo '<form method="post">'.csrf_field().'<input type="hidden" name="action" value="move_dashboard_site"><input type="hidden" name="site_id" value="'.$siteId.'"><input type="hidden" name="direction" value="up"><button class="button" type="submit">↑ 上へ</button></form>';
             if($position<count($dashboardRows)-1)echo '<form method="post">'.csrf_field().'<input type="hidden" name="action" value="move_dashboard_site"><input type="hidden" name="site_id" value="'.$siteId.'"><input type="hidden" name="direction" value="down"><button class="button" type="submit">↓ 下へ</button></form>';
             echo '</div></div>';
+            echo '<details class="site-delete"><summary>サイトを削除</summary><form method="post" data-confirm="このサイトと関連データを完全に削除します。よろしいですか？">'.csrf_field().'<input type="hidden" name="action" value="delete_site"><input type="hidden" name="id" value="'.$siteId.'"><p><strong>'.e((string)$row['name']).'</strong>（'.e((string)$row['url']).'）の登録・アクセス集計・相互リンク・RSS・ウィジェット等を削除します。元には戻せません。外部サイト本体は削除しません。</p><label><input type="checkbox" name="confirm_delete" value="yes" required> はい、削除します</label><p><button type="submit" class="button danger">このサイトを完全削除</button></p></form></details>';
             echo '</article>';
         }
 

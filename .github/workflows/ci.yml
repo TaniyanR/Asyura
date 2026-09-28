@@ -26,6 +26,7 @@ jobs:
         run: |
           php tests/run.php
           php tests/widgets.php
+          php tests/search-console.php
       - name: Widget JavaScript checks
         run: |
           node --check assets/widget-preview.js

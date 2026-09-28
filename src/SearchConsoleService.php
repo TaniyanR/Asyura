@@ -13,7 +13,7 @@ final class SearchConsoleService
     private const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
     private const SITES_URL = 'https://www.googleapis.com/webmasters/v3/sites';
 
-    public function __construct(private PDO $db, private array $config) {}
+    public function __construct(private PDO $db, private array $config, private ?\Closure $transport = null) {}
 
     public function ensureSchema(): void
     {
@@ -51,6 +51,13 @@ final class SearchConsoleService
             'connected' => $hasRefreshToken && $clientSecretReadable && $refreshTokenReadable,
             'reconnect_required' => $reconnectRequired,
             'connected_at' => $row['connected_at'] ?? null,
+            'recovery_message' => !$reconnectRequired ? '' : (
+                !function_exists('openssl_decrypt') ? 'サーバーのOpenSSL拡張が無効です。有効にしてください。保存情報は削除していません。' : (
+                    !$hasClientSecret ? 'クライアントシークレットが未保存です。入力して保存し、Googleアカウントを再接続してください。' : (!$clientSecretReadable
+                        ? 'シークレットは保存されていますが復号できません。config/config.php の app_key が以前と同じか確認してください。元の設定を復元できない場合は、クライアントシークレットを再入力してください。その後Googleアカウントを再接続してください。'
+                        : 'シークレットは保存済みです。接続トークンを復号できないため、Googleアカウントを再接続してください。シークレットの再入力は不要です。')
+                )
+            ),
         ];
     }
 
@@ -63,6 +70,9 @@ final class SearchConsoleService
         $currentClientId = trim((string)($current['client_id'] ?? ''));
         $currentSecret = (string)($current['client_secret_enc'] ?? '');
         if ($clientSecret !== null && trim($clientSecret) !== '') {
+            // Browser autofill or re-saving identical credentials must not disconnect Google.
+            if (hash_equals($currentClientId, $clientId) && $this->canDecrypt($currentSecret)
+                && hash_equals($this->decrypt($currentSecret), trim($clientSecret))) return;
             $enc = $this->encrypt(trim($clientSecret));
             $stmt = $this->db->prepare('UPDATE search_console_auth SET client_id=?,client_secret_enc=?,access_token_enc=NULL,refresh_token_enc=NULL,token_expires_at=NULL,connected_at=NULL WHERE id=1');
             $stmt->execute([$clientId,$enc]);
@@ -133,8 +143,7 @@ final class SearchConsoleService
 
     public function listProperties(): array
     {
-        $token = $this->accessToken();
-        $json = $this->request('GET', self::SITES_URL, [], $token);
+        $json = $this->authorizedRequest('GET', self::SITES_URL);
         $items = [];
         foreach (($json['siteEntry'] ?? []) as $entry) {
             if (!is_array($entry) || empty($entry['siteUrl'])) continue;
@@ -151,24 +160,38 @@ final class SearchConsoleService
     {
         $property = trim($property);
         if ($property === '') throw new RuntimeException('このサイトにSearch Consoleプロパティが設定されていません。');
-        $token = $this->accessToken();
         $url = 'https://www.googleapis.com/webmasters/v3/sites/' . rawurlencode($property) . '/searchAnalytics/query';
-        $json = $this->requestJson('POST', $url, [
+        $json = $this->authorizedRequest('POST', $url, [
             'startDate' => $startDate,
             'endDate' => $endDate,
             'dimensions' => ['query','page'],
             'rowLimit' => 250,
             'dataState' => 'final',
-        ], $token);
+        ]);
         return is_array($json['rows'] ?? null) ? $json['rows'] : [];
     }
 
-    private function accessToken(): string
+    private function authorizedRequest(string $method, string $url, ?array $body = null): array
+    {
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $token = $this->accessToken($attempt > 0);
+            try {
+                return $body === null ? $this->request($method, $url, [], $token)
+                    : $this->requestJson($method, $url, $body, $token);
+            } catch (RuntimeException $e) {
+                // Only an API 401 warrants one refresh; permission/transport errors do not.
+                if ($attempt > 0 || $e->getCode() !== 401) throw $e;
+            }
+        }
+        throw new RuntimeException('Google APIの認証に失敗しました。Googleアカウントを再接続してください。');
+    }
+
+    private function accessToken(bool $forceRefresh = false): string
     {
         $this->ensureSchema();
         $row = $this->db->query('SELECT client_id,client_secret_enc,access_token_enc,refresh_token_enc,token_expires_at FROM search_console_auth WHERE id=1')->fetch() ?: [];
         if (empty($row['refresh_token_enc'])) throw new RuntimeException('Google Search Consoleが未接続です。');
-        if (!empty($row['access_token_enc']) && !empty($row['token_expires_at']) && strtotime((string)$row['token_expires_at']) > time()) {
+        if (!$forceRefresh && !empty($row['access_token_enc']) && !empty($row['token_expires_at']) && strtotime((string)$row['token_expires_at']) > time() && $this->canDecrypt((string)$row['access_token_enc'])) {
             return $this->decrypt((string)$row['access_token_enc']);
         }
         $clientSecret = $this->decrypt((string)($row['client_secret_enc'] ?? ''));
@@ -181,8 +204,11 @@ final class SearchConsoleService
         ], null, true);
         if (empty($json['access_token'])) throw new RuntimeException('Google Search Consoleのアクセストークン更新に失敗しました。');
         $expires = date('Y-m-d H:i:s', time() + max(60,(int)($json['expires_in'] ?? 3600)) - 60);
-        $stmt = $this->db->prepare('UPDATE search_console_auth SET access_token_enc=?,token_expires_at=? WHERE id=1');
-        $stmt->execute([$this->encrypt((string)$json['access_token']),$expires]);
+        $refreshEnc = !empty($json['refresh_token']) ? $this->encrypt((string)$json['refresh_token']) : $row['refresh_token_enc'];
+        // Do not resurrect a connection disconnected or changed while the request was in flight.
+        $stmt = $this->db->prepare('UPDATE search_console_auth SET access_token_enc=?,refresh_token_enc=?,token_expires_at=? WHERE id=1 AND client_id=? AND client_secret_enc=? AND refresh_token_enc=?');
+        $stmt->execute([$this->encrypt((string)$json['access_token']),$refreshEnc,$expires,$row['client_id'],$row['client_secret_enc'],$row['refresh_token_enc']]);
+        if ($stmt->rowCount() === 0) throw new RuntimeException('Google接続設定が更新されました。画面を再読み込みしてください。');
         return (string)$json['access_token'];
     }
 
@@ -218,7 +244,9 @@ final class SearchConsoleService
 
     private function rawRequest(string $method, string $url, ?string $body, array $headers): array
     {
-        if (function_exists('curl_init')) {
+        if ($this->transport !== null) {
+            [$status, $response] = ($this->transport)($method, $url, $body, $headers);
+        } elseif (function_exists('curl_init')) {
             $ch = curl_init($url);
             curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>20,CURLOPT_CUSTOMREQUEST=>$method,CURLOPT_HTTPHEADER=>$headers]);
             if ($body !== null) curl_setopt($ch,CURLOPT_POSTFIELDS,$body);
@@ -237,17 +265,29 @@ final class SearchConsoleService
         $json = json_decode((string)$response,true);
         if (!is_array($json)) $json = [];
         if ($status < 200 || $status >= 300) {
-            $message = (string)($json['error']['message'] ?? $json['error_description'] ?? 'Google APIでエラーが発生しました。');
-            throw new RuntimeException($message);
+            $error = $json['error'] ?? null;
+            $message = match (is_string($error) ? $error : '') {
+                'invalid_grant' => 'Googleの接続許可が失効しています。Googleアカウントを再接続してください。約7日で切れる場合はGoogle CloudのOAuth同意画面が「テスト」になっていないか確認してください。シークレットは削除していません。',
+                'invalid_client' => 'GoogleがクライアントIDまたはシークレットを拒否しました。Google Cloudの設定と照合してください。保存情報は削除していません。',
+                default => 'Google APIへの接続に失敗しました（HTTP ' . $status . '）。時間をおいて再試行し、続く場合はGoogle Cloudの権限とAPI設定を確認してください。保存情報は削除していません。',
+            };
+            throw new RuntimeException($message, (int)$status);
         }
         return $json;
+    }
+
+    private function encryptionKey(): string
+    {
+        $key = (string)($this->config['app_key'] ?? '');
+        if (trim($key) === '') throw new RuntimeException('config/config.php の app_key がありません。以前の設定ファイルを復元してください。');
+        return hash('sha256', $key, true);
     }
 
     private function encrypt(string $plain): string
     {
         if ($plain === '') return '';
         if (!function_exists('openssl_encrypt')) throw new RuntimeException('OpenSSL拡張が必要です。');
-        $key = hash('sha256',(string)($this->config['app_key'] ?? ''),true);
+        $key = $this->encryptionKey();
         $iv = random_bytes(12);
         $tag = '';
         $cipher = openssl_encrypt($plain,'aes-256-gcm',$key,OPENSSL_RAW_DATA,$iv,$tag);
@@ -264,7 +304,7 @@ final class SearchConsoleService
         $iv = substr($raw,0,12);
         $tag = substr($raw,12,16);
         $cipher = substr($raw,28);
-        $key = hash('sha256',(string)($this->config['app_key'] ?? ''),true);
+        $key = $this->encryptionKey();
         $plain = openssl_decrypt($cipher,'aes-256-gcm',$key,OPENSSL_RAW_DATA,$iv,$tag);
         if ($plain === false) throw new RuntimeException('保存済み認証情報を復号できません。');
         return $plain;

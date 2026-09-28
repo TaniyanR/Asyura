@@ -87,7 +87,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
 
                 $config = $existingConfig;
                 $config['app_url'] = $config['app_url'] ?? $appUrl;
-                $config['app_key'] = $config['app_key'] ?? Security::randomToken(32);
+                if (empty($config['app_key'])) {
+                    $authTable = $db->query("SHOW TABLES LIKE 'search_console_auth'")->fetchColumn();
+                    if ($authTable && $db->query("SELECT COUNT(*) FROM search_console_auth WHERE COALESCE(client_secret_enc,'')<>'' OR COALESCE(refresh_token_enc,'')<>''")->fetchColumn()) {
+                        throw new RuntimeException('保存済みGoogle認証情報がありますが暗号鍵がありません。新しい鍵は作成しません。以前のconfig/config.phpをバックアップから復元してください。');
+                    }
+                    $config['app_key'] = Security::randomToken(32);
+                }
                 $config['timezone'] = $config['timezone'] ?? 'Asia/Tokyo';
                 $config['db'] = ['host' => $host, 'port' => $port, 'name' => $name, 'user' => $user, 'pass' => $pass, 'charset' => 'utf8mb4'];
                 $config['cron_key'] = $config['cron_key'] ?? Security::randomToken(24);
