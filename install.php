@@ -55,7 +55,7 @@ if ($installed) {
 }
 
 $repairMode = $installed && !$dbReachable;
-$recoverConfig = !$installed && ($_POST['setup_mode'] ?? 'recover') !== 'new';
+$recoverConfig = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
     if (!Security::verifyCsrf($_POST['csrf_token'] ?? null)) {
@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
     } else {
         $host = '127.0.0.1';
         $port = 3306;
-        $name = preg_replace('/[^a-zA-Z0-9_]/', '', (string) ($_POST['db_name'] ?? 'asyura'));
+        $name = preg_replace('/[^a-zA-Z0-9_]/', '', (string) ($_POST['db_name'] ?? ''));
         $user = Security::cleanText($_POST['db_user'] ?? '', 255);
         $pass = (string) ($_POST['db_pass'] ?? '');
 
@@ -73,30 +73,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
             try {
                 $pdoOptions = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false];
                 $dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $host, $port, $name);
-                try {
-                    $db = new PDO($dsn, $user, $pass, $pdoOptions);
-                } catch (PDOException $e) {
-                    if ($installed || $recoverConfig || (int) ($e->errorInfo[1] ?? 0) !== 1049) {
-                        throw $e;
-                    }
-                    $serverDsn = sprintf('mysql:host=%s;port=%d;charset=utf8mb4', $host, $port);
-                    $server = new PDO($serverDsn, $user, $pass, $pdoOptions);
-                    $quotedDb = '`' . str_replace('`', '``', $name) . '`';
-                    $server->exec("CREATE DATABASE {$quotedDb} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-                    $db = new PDO($dsn, $user, $pass, $pdoOptions);
-                }
-
-                if ($recoverConfig) {
-                    \Asyura\ConfigRecovery::validate($db, ($_POST['reset_google_auth'] ?? '') === 'yes');
+                $db = new PDO($dsn, $user, $pass, $pdoOptions);
+                $recoverConfig = \Asyura\ConfigRecovery::isExisting($db);
+                if ($installed && !$recoverConfig) {
+                    throw new InvalidArgumentException('既存データがないDBです。以前使用していたDB名を確認してください。');
                 }
 
                 $config = $existingConfig;
                 $config['app_url'] = $config['app_url'] ?? $appUrl;
                 if (empty($config['app_key'])) {
-                    $authTable = $db->query("SHOW TABLES LIKE 'search_console_auth'")->fetchColumn();
-                    if (!$recoverConfig && $authTable && $db->query("SELECT COUNT(*) FROM search_console_auth WHERE COALESCE(client_secret_enc,'')<>'' OR COALESCE(refresh_token_enc,'')<>''")->fetchColumn()) {
-                        throw new InvalidArgumentException('保存済みGoogle認証情報があります。元のconfig/config.phpを復元するか、「既存DBから設定を復旧」を選びGoogle認証の再設定に同意してください。');
-                    }
                     $config['app_key'] = Security::randomToken(32);
                 }
                 $config['timezone'] = $config['timezone'] ?? 'Asia/Tokyo';
@@ -146,8 +131,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$installed || $repairMode)) {
     }
 }
 
-$defaultDbName = (string) ($_POST['db_name'] ?? (($existingConfig['db']['name'] ?? '') ?: 'asyura'));
-$defaultDbUser = (string) ($_POST['db_user'] ?? (($existingConfig['db']['user'] ?? '') ?: 'root'));
 ?>
 <!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>阿修羅 DB接続設定</title><link rel="stylesheet" href="assets/admin.css"><link rel="stylesheet" href="assets/admin-refined.css"></head><body class="login-body">
@@ -157,13 +140,5 @@ $defaultDbUser = (string) ($_POST['db_user'] ?? (($existingConfig['db']['user'] 
 <?php else: ?>
 <?php if ($repairMode): ?><div class="notice warning">データベースへ接続できません。接続情報を確認して保存してください。既存データは初期化しません。</div><?php endif; ?>
 <?php if ($error): ?><div class="notice error"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div><?php endif; ?>
-<form method="post" autocomplete="off"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Security::csrfToken(), ENT_QUOTES, 'UTF-8') ?>"><h2>データベース</h2><?php if (!$installed): ?>
-<fieldset><legend>設定方法</legend>
-<label><input type="radio" name="setup_mode" value="recover" <?= $recoverConfig ? 'checked' : '' ?>> 既存DBから設定を復旧</label>
-<label><input type="radio" name="setup_mode" value="new" <?= !$recoverConfig ? 'checked' : '' ?>> 新規インストール</label>
-</fieldset>
-<p>復旧では登録サイト・アクセス集計・既存の管理者パスワードを保持し、config.phpを再作成します。</p>
-<label><input type="checkbox" name="reset_google_auth" value="yes" <?= ($_POST['reset_google_auth'] ?? '') === 'yes' ? 'checked' : '' ?>> 元のconfig.phpがないため、新しい暗号鍵を作成し、Google認証を再設定する</label>
-<p class="description">復旧後は今までの管理者アカウントでログインしてください。cronを使用している場合は、復旧後のcron用キーに合わせて実行URLも更新してください。</p>
-<?php endif; ?><div class="form-grid"><label>DB名<input name="db_name" value="<?= htmlspecialchars($defaultDbName, ENT_QUOTES, 'UTF-8') ?>" required></label><label>DBユーザー<input name="db_user" value="<?= htmlspecialchars($defaultDbUser, ENT_QUOTES, 'UTF-8') ?>" required></label><label class="span-2">DBパスワード<input name="db_pass" type="password" autocomplete="new-password"></label></div><?php if ($repairMode): ?><p class="description">DB接続情報だけを更新します。</p><?php endif; ?><button class="button primary" type="submit">DB接続設定を保存</button></form>
+<form method="post" autocomplete="off"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Security::csrfToken(), ENT_QUOTES, 'UTF-8') ?>"><h2>データベース</h2><p>DB接続情報を入力してください。既存の登録データがある場合は、そのデータを保持して接続設定を復旧します。</p><div class="form-grid"><label>DB名<input name="db_name" value="" autocomplete="off" required></label><label>DBユーザー<input name="db_user" value="" autocomplete="off" required></label><label class="span-2">DBパスワード<input name="db_pass" type="password" autocomplete="new-password"></label></div><?php if ($repairMode): ?><p class="description">DB接続情報だけを更新します。</p><?php endif; ?><button class="button primary" type="submit">DB接続設定を保存</button></form>
 <?php endif; ?></main></body></html>
