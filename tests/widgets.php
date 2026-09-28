@@ -107,3 +107,16 @@ $_SESSION=['admin_site_id'=>2];
 try {$save->invoke(new Asyura\AdminController($db,$config));throw new RuntimeException('Cross-site write allowed');}
 catch(InvalidArgumentException $e){echo "OK another site cannot save this widget\n";}
 echo "Widget behavior tests passed.\n";
+
+foreach (['links','rss','ranking'] as $type) {
+    $direct=['id'=>1,'type'=>$type,'slot_code'=>'A','template_html'=>'<a href="{url}" rel="{rel}" target="{target}">{title}</a>','custom_css'=>''];
+    $items=[['url'=>'https://partner.example/article?a=1&b=2','title'=>'Partner','rel'=>'follow','target'=>'_blank']];
+    $output=$renderer->render($direct,$items);
+    check(str_contains($output,'href="https://partner.example/article?a=1&amp;b=2"') && !str_contains($output,'api/out.php'), "$type uses direct href");
+    check(str_contains($output,'rel="follow" target="_blank"'), "$type retains rel and target settings");
+    $targets=$renderer->clickTargets($direct,$items);
+    parse_str((string)parse_url($targets[$items[0]['url']],PHP_URL_QUERY),$token);
+    check(hash_equals(hash_hmac('sha256','1|'.$token['u'],$config['app_key']),$token['sig']), "$type measurement remains signed");
+    check($renderer->clickTargets($direct,[['url'=>'javascript:alert(1)']])===[], 'invalid URL cannot be measured');
+    check(str_contains($renderer->render($direct,[['url'=>'javascript:alert(1)']]),'href="#"'), 'invalid URL is not navigable');
+}
