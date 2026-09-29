@@ -160,6 +160,8 @@ final class AdminController
             throw new \InvalidArgumentException('「はい、削除します」を選択していないため、削除しませんでした。');
         }
         (new SiteService($this->db))->deletePermanently((int) ($_POST['id'] ?? 0));
+        if ((int)($_SESSION['admin_site_id'] ?? 0) === (int)($_POST['id'] ?? 0)) unset($_SESSION['admin_site_id']);
+        View::flash('サイトと関連データを削除しました。');
     }
 
     private function saveFeed(): void

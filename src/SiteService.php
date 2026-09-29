@@ -111,6 +111,7 @@ final class SiteService
 
     public function deletePermanently(int $id): void
     {
+        if ($id < 1) throw new \InvalidArgumentException('削除するサイトが正しくありません。');
         $stmt = $this->db->prepare('DELETE FROM sites WHERE id = ?');
         $stmt->execute([$id]);
     }
