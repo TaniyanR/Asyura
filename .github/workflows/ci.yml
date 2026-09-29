@@ -28,8 +28,10 @@ jobs:
           php tests/widgets.php
           php tests/search-console.php
           php tests/config-recovery.php
+          php tests/rss-cache.php
       - name: Widget JavaScript checks
         run: |
+          node --check assets/admin.js
           node --check assets/widget-preview.js
           node --check assets/widget-embed.js
           node --check assets/widget-resize.js
