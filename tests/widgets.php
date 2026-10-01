@@ -83,6 +83,13 @@ check($ids===[11,12,18,22,23,112], 'old widget feed filter is ignored; all eligi
 check(count($ids)===count(array_unique($ids)), 'no duplicate article in a widget');
 $widget['slot_code']='TEXT-A';
 check(in_array(113,array_column($renderer->rss($widget),'id'),true), 'text RSS accepts articles without images');
+$db->exec("INSERT INTO sites VALUES(3,'Site Three','https://three.example',0);
+INSERT INTO reciprocal_links VALUES(30,3,'Partner 30','https://partner30.example/','approved',1,1,'normal',0,'A','','','follow',1);
+INSERT INTO rss_feeds VALUES(30,3,30,'Feed 30',1);
+INSERT INTO rss_items VALUES(30,30,'Fallback article','https://partner30.example/article',NULL,0,'2026-09-12');
+INSERT INTO daily_link_stats VALUES(3,'partner30.example',date('now'),0,0);");
+$fallbackWidget=['id'=>30,'site_id'=>3,'type'=>'rss','slot_code'=>'TEXT-A','item_limit'=>10,'config_json'=>'{}'];
+check(array_column($renderer->rss($fallbackWidget),'id')===[30], 'RSS stays populated when all return quotas are zero');
 $links=$renderer->links(['site_id'=>1,'slot_code'=>'A']);
 check(!in_array('Partner 14',array_column($links,'title'),true), 'excluded site is absent from reciprocal links');
 check(in_array('Partner 15',array_column($links,'title'),true), 'RSS-only exclusion still allows a reciprocal link');
@@ -92,17 +99,21 @@ $legacy=['id'=>1,'type'=>'ranking','slot_code'=>'A','template_html'=>'<a href="{
 check(str_contains(Asyura\WidgetDesign::withDefaults($legacy)['template_html'],'ranking-row'), 'untouched legacy ranking receives starter design');
 $custom=$legacy;$custom['custom_css']='.asyura-ranking{color:red}';
 check(Asyura\WidgetDesign::withDefaults($custom)===$custom, 'custom HTML/CSS are preserved');
+$brokenCss='.asyura-rss{width:100% height:auto;display:block color:#222}';
+$repairedCss=Asyura\WidgetDesign::repairCss($brokenCss);
+check(str_contains($repairedCss,'width:100%;height:auto') && str_contains($repairedCss,'display:block;color:#222'), 'common missing CSS semicolons are repaired');
 $custom['template_html']='┗ <a href="{url}">{title}</a><br>';
 $rendered=$renderer->render($custom,[['title'=>'<script>alert(1)</script>','url'=>'https://example.com']]);
 check(str_contains($rendered,'</a><br>') && str_contains($rendered,'&lt;script&gt;'), 'renderer preserves explicit line breaks and escapes titles');
 check($renderer->render($legacy,[])==='', 'public output never substitutes sample entries');
 $db->prepare('INSERT INTO widgets VALUES(1,1,\'rss\',10,\'80%\',\'500px\',?,\'RSS\',1,\'\',\'\')')->execute(['{"feed_ids":[11],"other_setting":"preserved"}']);
 $_SESSION=['admin_site_id'=>1];
-$_POST=['id'=>1,'name'=>'Updated','enabled'=>'1','item_limit'=>'12','template_html'=>'<a href="{url}">{title}</a><br>','custom_css'=>'.asyura-rss{width:100%;height:auto}'];
+$_POST=['id'=>1,'name'=>'Updated','enabled'=>'1','item_limit'=>'12','template_html'=>'<a href="{url}">{title}</a><br>','custom_css'=>'.asyura-rss{width:100% height:auto}'];
 $save=new ReflectionMethod(Asyura\AdminController::class,'saveWidget');$save->invoke(new Asyura\AdminController($db,$config));
 $saved=$db->query('SELECT * FROM widgets WHERE id=1')->fetch();$savedConfig=json_decode($saved['config_json'],true);
 check(!isset($savedConfig['feed_ids']) && $savedConfig['other_setting']==='preserved','save removes obsolete feed filters and preserves other config');
 check($saved['width']==='80%' && $saved['height']==='500px' && str_ends_with($saved['template_html'],'<br>'),'saving CSS editor preserves legacy dimensions and HTML breaks');
+check(str_contains($saved['custom_css'],'width:100%;height:auto'),'saving repairs a missing CSS semicolon');
 $_SESSION=['admin_site_id'=>2];
 try {$save->invoke(new Asyura\AdminController($db,$config));throw new RuntimeException('Cross-site write allowed');}
 catch(InvalidArgumentException $e){echo "OK another site cannot save this widget\n";}
