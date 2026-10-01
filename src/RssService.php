@@ -9,7 +9,7 @@ final class RssService
 {
     private const MAX_BYTES = 2097152;
 
-    public function __construct(private PDO $db)
+    public function __construct(private PDO $db, private ?\Closure $downloader = null)
     {
     }
 
@@ -23,7 +23,16 @@ final class RssService
 
     public function fetchOne(array $feed): int
     {
-        $response=$this->download((string)$feed['feed_url'],(string)($feed['etag']??''),(string)($feed['last_modified']??''));
+        // Expired RSS items may have been cleaned up while the upstream feed is unchanged.
+        // A conditional request would return 304 forever without restoring displayable items.
+        $cached = $this->db->prepare('SELECT 1 FROM rss_items WHERE feed_id=? AND site_id=? LIMIT 1');
+        $cached->execute([(int)$feed['id'], (int)$feed['site_id']]);
+        $hasItems = (bool)$cached->fetchColumn();
+        $etag = $hasItems ? (string)($feed['etag'] ?? '') : '';
+        $modified = $hasItems ? (string)($feed['last_modified'] ?? '') : '';
+        $response = $this->downloader !== null
+            ? ($this->downloader)((string)$feed['feed_url'], $etag, $modified)
+            : $this->download((string)$feed['feed_url'], $etag, $modified);
         if($response['status']===304){$this->db->prepare('UPDATE rss_feeds SET last_fetched_at=NOW(),last_success_at=NOW(),last_error=NULL WHERE id=?')->execute([$feed['id']]);return 0;}
         libxml_use_internal_errors(true);
         $xml=simplexml_load_string($response['body'],'SimpleXMLElement',LIBXML_NONET|LIBXML_NOCDATA|LIBXML_COMPACT);

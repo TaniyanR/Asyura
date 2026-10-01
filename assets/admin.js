@@ -124,3 +124,29 @@ document.addEventListener('click',function(e){
     sidebar.addEventListener('click',function(e){if(window.matchMedia('(max-width:900px)').matches&&e.target.closest('a'))closeMenu()});
     window.addEventListener('resize',function(){if(!window.matchMedia('(max-width:900px)').matches)closeMenu()});
 })();
+
+(function(){
+    var dialog;
+    document.addEventListener('submit',function(event){
+        var form=event.target;
+        if(!form.matches('[data-site-delete]'))return;
+        var confirmed=form.querySelector('[name="confirm_delete"]');
+        if(confirmed.value==='yes')return;
+        event.preventDefault();
+        if(!dialog){
+            dialog=document.createElement('dialog');
+            dialog.className='site-delete-dialog';
+            dialog.setAttribute('aria-labelledby','site-delete-question');
+            dialog.innerHTML='<form method="dialog"><p id="site-delete-question"></p><div class="actions"><button class="button" value="no" autofocus>いいえ</button><button class="button danger" value="yes">はい</button></div></form>';
+            document.body.appendChild(dialog);
+        }
+        dialog.querySelector('p').textContent='「'+form.dataset.siteName+'」と関連データを完全削除しますか？元には戻せません。';
+        dialog.returnValue='no';
+        dialog.addEventListener('close',function(){
+            if(dialog.returnValue!=='yes')return;
+            confirmed.value='yes';
+            form.requestSubmit();
+        },{once:true});
+        dialog.showModal();
+    });
+})();
