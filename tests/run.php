@@ -120,3 +120,8 @@ foreach(['SiteMetadataService','fetchMetadata($url)',"range('A', 'J')"] as $need
 if(str_contains($widgetRenderer,"FIND_IN_SET(?,slots)>0 ORDER BY id DESC LIMIT ?")){fwrite(STDERR,"FAIL reciprocal link widget still limits configured links\n");$failed++;}
 $widgetPage=(string)file_get_contents(dirname(__DIR__).'/admin/pages.php').file_get_contents(dirname(__DIR__).'/admin/widget-design.php');foreach(['表示件数の設定は不要です','link-widget-design-form','widget-name-field','widget-save-actions'] as $needle){if(!str_contains($widgetPage,$needle)){fwrite(STDERR,"FAIL reciprocal widget layout/count cleanup missing: {$needle}\n");$failed++;}}
 if($failed){exit(1);}echo "All tests passed.\n";
+
+$settingsPage=(string)file_get_contents(dirname(__DIR__).'/admin/pages.php');
+
+foreach(['personal-settings-form','login-settings-grid','personal-settings-actions','field-note'] as $needle){if(!str_contains($settingsPage,$needle)){fwrite(STDERR,"FAIL personal settings layout missing: {$needle}\n");$failed++;}}
+$adminShellCss=(string)file_get_contents(dirname(__DIR__).'/assets/admin-shell.css');foreach(['.login-settings-grid','.personal-settings-actions','margin-top:18px'] as $needle){if(!str_contains($adminShellCss,$needle)){fwrite(STDERR,"FAIL personal settings CSS missing: {$needle}\n");$failed++;}}
