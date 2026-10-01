@@ -482,6 +482,7 @@ final class AdminController
     private function sanitizeCss(string $css): string
     {
         $css = preg_replace('/@import|expression\s*\(|javascript\s*:|behavior\s*:/i', '', $css);
+        $css = WidgetDesign::repairCss((string)$css);
         return mb_substr($css, 0, 30000);
     }
 
