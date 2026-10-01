@@ -116,8 +116,27 @@ final class DistributionService
     private function itemForPartner(int $targetSiteId,int $linkId,bool $imageRequired,array $feedIds,array $used):?array
     {
         $where=['f.site_id=?','f.reciprocal_link_id=?','f.active=1'];$args=[$targetSiteId,$linkId];if($imageRequired)$where[]='i.image_is_usable=1';
-        if($feedIds){$where[]='f.id IN ('.implode(',',array_fill(0,count($feedIds),'?')).')';$args=array_merge($args,$feedIds);}if($used){$where[]='i.id NOT IN ('.implode(',',array_fill(0,count($used),'?')).')';$args=array_merge($args,$used);}
-        $stmt=$this->db->prepare('SELECT i.*,l.partner_name site_name,f.name rss_name FROM rss_items i JOIN rss_feeds f ON f.id=i.feed_id JOIN reciprocal_links l ON l.id=f.reciprocal_link_id AND l.site_id=f.site_id WHERE '.implode(' AND ',$where).' ORDER BY i.published_at DESC,i.id DESC LIMIT 50');$stmt->execute($args);$items=$stmt->fetchAll();return$items?$items[random_int(0,count($items)-1)]:null;
+        if($feedIds){$where[]='f.id IN ('.implode(',',array_fill(0,count($feedIds),'?')).')';$args=array_merge($args,$feedIds);}
+        $liveUsed=array_values(array_filter($used,static fn(int $id):bool=>$id>0));
+        if($liveUsed){$where[]='i.id NOT IN ('.implode(',',array_fill(0,count($liveUsed),'?')).')';$args=array_merge($args,$liveUsed);}
+        $stmt=$this->db->prepare('SELECT i.*,l.partner_name site_name,f.name rss_name FROM rss_items i JOIN rss_feeds f ON f.id=i.feed_id JOIN reciprocal_links l ON l.id=f.reciprocal_link_id AND l.site_id=f.site_id WHERE '.implode(' AND ',$where).' ORDER BY i.published_at DESC,i.id DESC LIMIT 50');
+        $stmt->execute($args);
+        $items=$stmt->fetchAll();
+        if($items)return $items[random_int(0,count($items)-1)];
+
+        // rss_items is a short-lived cache. When cron is temporarily stopped or the
+        // cache has already expired, keep public reciprocal RSS visible from the
+        // durable article archive instead of rendering an empty iframe.
+        $archiveWhere=['f.site_id=?','f.reciprocal_link_id=?','f.active=1'];
+        $archiveArgs=[$targetSiteId,$linkId];
+        if($imageRequired)$archiveWhere[]="a.image_url IS NOT NULL AND a.image_url<>''";
+        if($feedIds){$archiveWhere[]='f.id IN ('.implode(',',array_fill(0,count($feedIds),'?')).')';$archiveArgs=array_merge($archiveArgs,$feedIds);}
+        $archiveUsed=array_values(array_map(static fn(int $id):int=>abs($id),array_filter($used,static fn(int $id):bool=>$id<0)));
+        if($archiveUsed){$archiveWhere[]='a.id NOT IN ('.implode(',',array_fill(0,count($archiveUsed),'?')).')';$archiveArgs=array_merge($archiveArgs,$archiveUsed);}
+        $archive=$this->db->prepare("SELECT -a.id id,a.feed_id,a.title,a.url,a.description,a.category,a.image_url,a.original_published_at published_at,l.partner_name site_name,f.name rss_name FROM article_archive a JOIN rss_feeds f ON f.id=a.feed_id AND f.site_id=a.site_id JOIN reciprocal_links l ON l.id=f.reciprocal_link_id AND l.site_id=f.site_id WHERE ".implode(' AND ',$archiveWhere).' ORDER BY COALESCE(a.original_published_at,a.first_seen_at) DESC,a.id DESC LIMIT 50');
+        $archive->execute($archiveArgs);
+        $archived=$archive->fetchAll();
+        return $archived?$archived[random_int(0,count($archived)-1)]:null;
     }
     private function allowedFeedIds(int $targetSiteId,array $feedIds):array
     {
