@@ -11,6 +11,8 @@ final class SettingsTransferService
 {
     public const FORMAT = 'asyura-settings-backup';
     public const VERSION = 1;
+    public const RECIPROCAL_FORMAT = 'asyura-reciprocal-transfer';
+    public const RECIPROCAL_VERSION = 1;
 
     private const SETTING_KEYS = [
         'ranking_period_days',
@@ -112,6 +114,77 @@ final class SettingsTransferService
             'excluded_referrers' => array_map(fn(array $row): array => $this->pick($row, ['label','pattern','match_type','active']), $this->db->query('SELECT * FROM excluded_referrers ORDER BY id')->fetchAll()),
             'sites' => $sites,
         ];
+    }
+
+    public function exportReciprocal(int $siteId): array
+    {
+        $siteStmt=$this->db->prepare('SELECT id,name,url FROM sites WHERE id=? LIMIT 1');
+        $siteStmt->execute([$siteId]);
+        $site=$siteStmt->fetch();
+        if(!$site)throw new InvalidArgumentException('エクスポートするサイトが見つかりません。');
+
+        $links=$this->rows('SELECT * FROM reciprocal_links WHERE site_id=? ORDER BY partner_name,id',[$siteId]);
+        $result=[];
+        foreach($links as $link){
+            $feeds=array_map(
+                fn(array $row):array=>$this->pick($row,['name','feed_url','active']),
+                $this->rows('SELECT * FROM rss_feeds WHERE site_id=? AND reciprocal_link_id=? ORDER BY id',[$siteId,(int)$link['id']])
+            );
+            $result[]=[
+                'data'=>$this->pick($link,[
+                    'partner_name','partner_url','normalized_url','description','category','slots','status',
+                    'rel_type','open_new_tab','is_priority','is_special','is_rescue','is_excluded',
+                    'reciprocal_link_enabled','reciprocal_rss_enabled','rss_url','allocation_type',
+                ]),
+                'rss_feeds'=>$feeds,
+            ];
+        }
+
+        return [
+            'format'=>self::RECIPROCAL_FORMAT,
+            'version'=>self::RECIPROCAL_VERSION,
+            'created_at'=>date(DATE_ATOM),
+            'source_site'=>[
+                'name'=>(string)$site['name'],
+                'url'=>(string)$site['url'],
+            ],
+            'reciprocal_links'=>$result,
+        ];
+    }
+
+    /** @return array{links:int,feeds:int} */
+    public function importReciprocal(int $targetSiteId,array $backup):array
+    {
+        if(($backup['format']??'')!==self::RECIPROCAL_FORMAT||(int)($backup['version']??0)!==self::RECIPROCAL_VERSION){
+            throw new InvalidArgumentException('阿修羅の相互設定エクスポート（バージョン1）ではありません。');
+        }
+        $siteStmt=$this->db->prepare('SELECT id FROM sites WHERE id=? LIMIT 1');
+        $siteStmt->execute([$targetSiteId]);
+        if(!(int)$siteStmt->fetchColumn())throw new InvalidArgumentException('インポート先サイトが見つかりません。');
+
+        $entries=$backup['reciprocal_links']??null;
+        if(!is_array($entries)||count($entries)>5000)throw new InvalidArgumentException('相互設定データが正しくありません。');
+
+        $counts=['links'=>0,'feeds'=>0];
+        $startedHere=!$this->db->inTransaction();
+        if($startedHere)$this->db->beginTransaction();
+        try{
+            foreach($entries as $entry){
+                if(!is_array($entry))continue;
+                $data=(array)($entry['data']??[]);
+                $linkId=$this->upsertLink($targetSiteId,$data);
+                $counts['links']++;
+                foreach((array)($entry['rss_feeds']??[]) as $feed){
+                    if(!is_array($feed))continue;
+                    if($this->upsertFeed($targetSiteId,$linkId,$feed)>0)$counts['feeds']++;
+                }
+            }
+            if($startedHere)$this->db->commit();
+        }catch(Throwable $e){
+            if($startedHere&&$this->db->inTransaction())$this->db->rollBack();
+            throw $e;
+        }
+        return $counts;
     }
 
     /** @return array{sites:int,links:int,feeds:int,widgets:int} */
