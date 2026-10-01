@@ -36,6 +36,7 @@ INSERT INTO sites VALUES(1,'Site One','https://one.example',0),(2,'Site Two','ht
 CREATE TABLE reciprocal_links(id INTEGER,site_id INTEGER,partner_name TEXT,partner_url TEXT,status TEXT,reciprocal_link_enabled INTEGER,reciprocal_rss_enabled INTEGER,allocation_type TEXT,is_excluded INTEGER,slots TEXT,description TEXT,category TEXT,rel_type TEXT,open_new_tab INTEGER);
 CREATE TABLE rss_feeds(id INTEGER,site_id INTEGER,reciprocal_link_id INTEGER,name TEXT,active INTEGER);
 CREATE TABLE rss_items(id INTEGER,feed_id INTEGER,title TEXT,url TEXT,image_url TEXT,image_is_usable INTEGER,published_at TEXT);
+CREATE TABLE article_archive(id INTEGER,site_id INTEGER,feed_id INTEGER,title TEXT,url TEXT,description TEXT,category TEXT,image_url TEXT,original_published_at TEXT,first_seen_at TEXT);
 CREATE TABLE raw_events(site_id INTEGER,event_type TEXT,is_bot INTEGER,is_suspicious INTEGER,referrer_host TEXT,occurred_at TEXT);
 CREATE TABLE daily_link_stats(site_id INTEGER,target_host TEXT,stat_date TEXT,outbound_clicks INTEGER,widget_clicks INTEGER);
 CREATE TABLE referrer_stats(site_id INTEGER,referrer_host TEXT,stat_date TEXT,inbound INTEGER,unique_inbound INTEGER);
@@ -90,6 +91,10 @@ INSERT INTO rss_items VALUES(30,30,'Fallback article','https://partner30.example
 INSERT INTO daily_link_stats VALUES(3,'partner30.example',date('now'),0,0);");
 $fallbackWidget=['id'=>30,'site_id'=>3,'type'=>'rss','slot_code'=>'TEXT-A','item_limit'=>10,'config_json'=>'{}'];
 check(array_column($renderer->rss($fallbackWidget),'id')===[30], 'RSS stays populated when all return quotas are zero');
+$db->exec("DELETE FROM rss_items WHERE id=30;
+INSERT INTO article_archive VALUES(300,3,30,'Archived fallback','https://partner30.example/archive','','',NULL,'2026-09-11','2026-09-11');");
+$archivedFallback=$renderer->rss($fallbackWidget);
+check(count($archivedFallback)===1 && $archivedFallback[0]['title']==='Archived fallback' && (int)$archivedFallback[0]['id']<0, 'RSS falls back to article archive when short-lived cache is empty');
 $links=$renderer->links(['site_id'=>1,'slot_code'=>'A']);
 check(!in_array('Partner 14',array_column($links,'title'),true), 'excluded site is absent from reciprocal links');
 check(in_array('Partner 15',array_column($links,'title'),true), 'RSS-only exclusion still allows a reciprocal link');
