@@ -90,7 +90,19 @@ final class DistributionService
     public function chooseItems(int $targetSiteId,int $limit,bool $imageRequired=false,array $allowedFeedIds=[]):array
     {
         $limit=max(1,min(100,$limit));$allowedFeedIds=$this->allowedFeedIds($targetSiteId,$allowedFeedIds);$rows=[];$used=[];
-        $weights=array_values(array_filter($this->buildRows($targetSiteId),static fn(array $row):bool=>(int)$row['remaining_accesses']>0));
+        $allWeights=$this->buildRows($targetSiteId);
+        $weights=array_values(array_filter($allWeights,static fn(array $row):bool=>(int)$row['remaining_accesses']>0));
+        // Do not render an empty RSS widget merely because every partner has reached
+        // the current return target. In that case keep the widget populated from the
+        // same approved/active partner pool, using equal weights. Actual outbound
+        // clicks remain counted and the normal remaining-access weighting resumes
+        // automatically as soon as a partner has quota again.
+        if(!$weights&&$allWeights){
+            $weights=$allWeights;
+            $equal=100/max(1,count($weights));
+            foreach($weights as &$weight)$weight['final_percent']=$equal;
+            unset($weight);
+        }
         while(count($rows)<$limit&&$weights){$partner=$this->weightedPartner($weights);if(!$partner)break;$linkId=(int)$partner['reciprocal_link_id'];$item=$this->itemForPartner($targetSiteId,$linkId,$imageRequired,$allowedFeedIds,$used);if(!$item){$weights=array_values(array_filter($weights,static fn(array $row):bool=>(int)$row['reciprocal_link_id']!==$linkId));continue;}$rows[]=$item;$used[]=(int)$item['id'];}
         return $rows;
     }
