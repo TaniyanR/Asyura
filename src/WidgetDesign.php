@@ -26,6 +26,23 @@ final class WidgetDesign
         return ['template_html'=>'<a href="{url}" rel="{rel}" target="{target}">{title}</a><br>', 'custom_css'=>'.asyura-links{width:100%;height:auto;font:14px/1.7 sans-serif}'];
     }
 
+    public static function repairCss(string $css): string
+    {
+        $css = str_replace(["\r\n","\r"], "\n", $css);
+        // Repair the common editor typo: "property:value property2:value2".
+        // This is deliberately conservative and only acts inside declaration text.
+        for ($i=0; $i<4; $i++) {
+            $fixed = preg_replace(
+                '/((?:--)?[a-zA-Z][a-zA-Z0-9-]*\s*:\s*[^;{}]+?)\s+((?:--)?[a-zA-Z][a-zA-Z0-9-]*\s*:)/',
+                '$1;$2',
+                $css
+            );
+            if ($fixed === null || $fixed === $css) break;
+            $css = $fixed;
+        }
+        return trim($css);
+    }
+
     public static function withDefaults(array $widget): array
     {
         $type = (string) $widget['type'];
@@ -37,7 +54,8 @@ final class WidgetDesign
             $legacy = ['<article><a href="{url}">{image_tag}<span>{title}</span></a></article>', '.asyura-rss article{display:flex;margin:0 0 10px}.asyura-rss img{width:96px;height:72px;object-fit:cover;margin-right:10px}'];
         }
         $html = trim((string) ($widget['template_html'] ?? ''));
-        $css = trim((string) ($widget['custom_css'] ?? ''));
+        $css = self::repairCss((string) ($widget['custom_css'] ?? ''));
+        $widget['custom_css'] = $css;
         if ($legacy && (($html === $legacy[0] && $css === $legacy[1]) || ($html === '' && $css === ''))) {
             $widget = array_replace($widget, self::defaults($type, $slot));
         }

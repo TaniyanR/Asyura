@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">阿修羅</title>
+  <rect width="64" height="64" rx="14" fill="#111111"/>
+  <path d="M32 10 50 20v24L32 54 14 44V20L32 10Z" fill="#b32d2e"/>
+  <path d="M23 43 30.5 20h3L41 43h-5l-1.5-5h-8L25 43h-2Zm5-10h5l-2.5-8-2.5 8Z" fill="#ffffff"/>
+</svg>

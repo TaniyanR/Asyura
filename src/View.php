@@ -45,6 +45,7 @@ final class View
         echo '<meta name="viewport" content="width=device-width,initial-scale=1">';
         echo '<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">';
         echo '<title>' . e($displayTitle) . ' ‹ 阿修羅</title>';
+        echo '<link rel="icon" type="image/svg+xml" href="' . e(self::assetUrl('assets/asyura-icon.svg')) . '">';
         echo '<link rel="stylesheet" href="' . e(self::assetUrl('assets/admin-shell.css')) . '">';
         echo '</head>';
         echo '<body>';
@@ -67,7 +68,7 @@ final class View
         echo '<a
             class="brand"
             href="' . e(app_url('admin/?page=dashboard')) . '"
-        >阿修羅</a>';
+        ><img src="' . e(self::assetUrl('assets/asyura-icon.svg')) . '" alt="" width="28" height="28">阿修羅</a>';
 
         /*
         |--------------------------------------------------------------------------

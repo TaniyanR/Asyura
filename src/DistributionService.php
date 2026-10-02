@@ -89,10 +89,86 @@ final class DistributionService
 
     public function chooseItems(int $targetSiteId,int $limit,bool $imageRequired=false,array $allowedFeedIds=[]):array
     {
-        $limit=max(1,min(100,$limit));$allowedFeedIds=$this->allowedFeedIds($targetSiteId,$allowedFeedIds);$rows=[];$used=[];
-        $weights=array_values(array_filter($this->buildRows($targetSiteId),static fn(array $row):bool=>(int)$row['remaining_accesses']>0));
+        $limit=max(1,min(100,$limit));$allowedFeedIds=$this->allowedFeedIds($targetSiteId,$allowedFeedIds);
+        $rows=$this->chooseExistingItems($targetSiteId,$limit,$imageRequired,$allowedFeedIds);
+        if($rows)return $rows;
+
+        // Public widgets must not stay blank forever when cron has not run yet.
+        // Recover at most one feed per site and only when the site has not attempted
+        // an RSS fetch in the last five minutes.
+        if($this->recoverOneFeed($targetSiteId)){
+            return $this->chooseExistingItems($targetSiteId,$limit,$imageRequired,$allowedFeedIds);
+        }
+        return [];
+    }
+
+    private function chooseExistingItems(int $targetSiteId,int $limit,bool $imageRequired,array $allowedFeedIds):array
+    {
+        $rows=[];$used=[];
+        $allWeights=$this->buildRows($targetSiteId);
+        $weights=array_values(array_filter($allWeights,static fn(array $row):bool=>(int)$row['remaining_accesses']>0));
+        // Do not render an empty RSS widget merely because every partner has reached
+        // the current return target. In that case keep the widget populated from the
+        // same approved/active partner pool, using equal weights. Actual outbound
+        // clicks remain counted and the normal remaining-access weighting resumes
+        // automatically as soon as a partner has quota again.
+        if(!$weights&&$allWeights){
+            $weights=$allWeights;
+            $equal=100/max(1,count($weights));
+            foreach($weights as &$weight)$weight['final_percent']=$equal;
+            unset($weight);
+        }
         while(count($rows)<$limit&&$weights){$partner=$this->weightedPartner($weights);if(!$partner)break;$linkId=(int)$partner['reciprocal_link_id'];$item=$this->itemForPartner($targetSiteId,$linkId,$imageRequired,$allowedFeedIds,$used);if(!$item){$weights=array_values(array_filter($weights,static fn(array $row):bool=>(int)$row['reciprocal_link_id']!==$linkId));continue;}$rows[]=$item;$used[]=(int)$item['id'];}
         return $rows;
+    }
+
+    private function recoverOneFeed(int $targetSiteId):bool
+    {
+        // Self-heal legacy links whose rss_url exists but whose rss_feeds row was
+        // never created by an older installation/migration.
+        $this->db->prepare("INSERT INTO rss_feeds (site_id,reciprocal_link_id,name,feed_url,active)
+            SELECT l.site_id,l.id,CONCAT(l.partner_name,' RSS 1'),l.rss_url,1
+            FROM reciprocal_links l
+            WHERE l.site_id=? AND l.status='approved'
+              AND (l.reciprocal_link_enabled=1 OR l.reciprocal_rss_enabled=1)
+              AND l.is_excluded=0 AND l.allocation_type<>'excluded'
+              AND l.rss_url IS NOT NULL AND l.rss_url<>''
+              AND NOT EXISTS (
+                  SELECT 1 FROM rss_feeds f
+                  WHERE f.site_id=l.site_id AND f.reciprocal_link_id=l.id
+              )")->execute([$targetSiteId]);
+
+        $recent=$this->db->prepare("SELECT MAX(f.last_fetched_at)
+            FROM rss_feeds f
+            JOIN reciprocal_links l ON l.id=f.reciprocal_link_id AND l.site_id=f.site_id
+            WHERE f.site_id=? AND f.active=1 AND l.status='approved'
+              AND (l.reciprocal_link_enabled=1 OR l.reciprocal_rss_enabled=1)
+              AND l.is_excluded=0 AND l.allocation_type<>'excluded'");
+        $recent->execute([$targetSiteId]);
+        $last=(string)($recent->fetchColumn()?:'');
+        if($last!==''&&strtotime($last)>time()-300)return false;
+
+        $feed=$this->db->prepare("SELECT f.*
+            FROM rss_feeds f
+            JOIN reciprocal_links l ON l.id=f.reciprocal_link_id AND l.site_id=f.site_id
+            WHERE f.site_id=? AND f.active=1 AND l.status='approved'
+              AND (l.reciprocal_link_enabled=1 OR l.reciprocal_rss_enabled=1)
+              AND l.is_excluded=0 AND l.allocation_type<>'excluded'
+              AND (f.last_fetched_at IS NULL OR f.last_fetched_at<=NOW()-INTERVAL 5 MINUTE)
+            ORDER BY f.last_fetched_at IS NULL DESC,f.last_fetched_at ASC,f.id ASC
+            LIMIT 1");
+        $feed->execute([$targetSiteId]);
+        $row=$feed->fetch();
+        if(!$row)return false;
+
+        try{
+            (new RssService($this->db))->fetchOne($row);
+            return true;
+        }catch(\Throwable $e){
+            $this->db->prepare('UPDATE rss_feeds SET last_fetched_at=NOW(),last_error=? WHERE id=? AND site_id=?')
+                ->execute([mb_substr($e->getMessage(),0,1000),(int)$row['id'],$targetSiteId]);
+            return false;
+        }
     }
 
     private function rescueQuota(int $linkId):int{return 1+(abs(crc32(date('Y-m-d').'|'.$linkId))%3);}
@@ -104,8 +180,27 @@ final class DistributionService
     private function itemForPartner(int $targetSiteId,int $linkId,bool $imageRequired,array $feedIds,array $used):?array
     {
         $where=['f.site_id=?','f.reciprocal_link_id=?','f.active=1'];$args=[$targetSiteId,$linkId];if($imageRequired)$where[]='i.image_is_usable=1';
-        if($feedIds){$where[]='f.id IN ('.implode(',',array_fill(0,count($feedIds),'?')).')';$args=array_merge($args,$feedIds);}if($used){$where[]='i.id NOT IN ('.implode(',',array_fill(0,count($used),'?')).')';$args=array_merge($args,$used);}
-        $stmt=$this->db->prepare('SELECT i.*,l.partner_name site_name,f.name rss_name FROM rss_items i JOIN rss_feeds f ON f.id=i.feed_id JOIN reciprocal_links l ON l.id=f.reciprocal_link_id AND l.site_id=f.site_id WHERE '.implode(' AND ',$where).' ORDER BY i.published_at DESC,i.id DESC LIMIT 50');$stmt->execute($args);$items=$stmt->fetchAll();return$items?$items[random_int(0,count($items)-1)]:null;
+        if($feedIds){$where[]='f.id IN ('.implode(',',array_fill(0,count($feedIds),'?')).')';$args=array_merge($args,$feedIds);}
+        $liveUsed=array_values(array_filter($used,static fn(int $id):bool=>$id>0));
+        if($liveUsed){$where[]='i.id NOT IN ('.implode(',',array_fill(0,count($liveUsed),'?')).')';$args=array_merge($args,$liveUsed);}
+        $stmt=$this->db->prepare('SELECT i.*,l.partner_name site_name,f.name rss_name FROM rss_items i JOIN rss_feeds f ON f.id=i.feed_id JOIN reciprocal_links l ON l.id=f.reciprocal_link_id AND l.site_id=f.site_id WHERE '.implode(' AND ',$where).' ORDER BY i.published_at DESC,i.id DESC LIMIT 50');
+        $stmt->execute($args);
+        $items=$stmt->fetchAll();
+        if($items)return $items[random_int(0,count($items)-1)];
+
+        // rss_items is a short-lived cache. When cron is temporarily stopped or the
+        // cache has already expired, keep public reciprocal RSS visible from the
+        // durable article archive instead of rendering an empty iframe.
+        $archiveWhere=['f.site_id=?','f.reciprocal_link_id=?','f.active=1'];
+        $archiveArgs=[$targetSiteId,$linkId];
+        if($imageRequired)$archiveWhere[]="a.image_url IS NOT NULL AND a.image_url<>''";
+        if($feedIds){$archiveWhere[]='f.id IN ('.implode(',',array_fill(0,count($feedIds),'?')).')';$archiveArgs=array_merge($archiveArgs,$feedIds);}
+        $archiveUsed=array_values(array_map(static fn(int $id):int=>abs($id),array_filter($used,static fn(int $id):bool=>$id<0)));
+        if($archiveUsed){$archiveWhere[]='a.id NOT IN ('.implode(',',array_fill(0,count($archiveUsed),'?')).')';$archiveArgs=array_merge($archiveArgs,$archiveUsed);}
+        $archive=$this->db->prepare("SELECT -a.id id,a.feed_id,a.title,a.url,a.description,a.category,a.image_url,a.original_published_at published_at,l.partner_name site_name,f.name rss_name FROM article_archive a JOIN rss_feeds f ON f.id=a.feed_id AND f.site_id=a.site_id JOIN reciprocal_links l ON l.id=f.reciprocal_link_id AND l.site_id=f.site_id WHERE ".implode(' AND ',$archiveWhere).' ORDER BY COALESCE(a.original_published_at,a.first_seen_at) DESC,a.id DESC LIMIT 50');
+        $archive->execute($archiveArgs);
+        $archived=$archive->fetchAll();
+        return $archived?$archived[random_int(0,count($archived)-1)]:null;
     }
     private function allowedFeedIds(int $targetSiteId,array $feedIds):array
     {

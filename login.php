@@ -31,8 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>ログイン ‹ 阿修羅</title><link rel="stylesheet" href="<?= e(app_url('assets/admin.css')) ?>"><link rel="stylesheet" href="<?= e(app_url('assets/admin-refined.css')) ?>"></head>
-<body class="login-body"><main class="login-card"><div class="brand-mark">阿</div><h1>阿修羅</h1><p class="muted">管理画面へログイン</p>
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>ログイン ‹ 阿修羅</title><link rel="icon" type="image/svg+xml" href="<?= e(app_url('assets/asyura-icon.svg')) ?>"><link rel="stylesheet" href="<?= e(app_url('assets/admin.css')) ?>"><link rel="stylesheet" href="<?= e(app_url('assets/admin-refined.css')) ?>"></head>
+<body class="login-body"><main class="login-card"><div class="brand-mark"><img src="<?= e(app_url('assets/asyura-icon.svg')) ?>" alt="" width="70" height="70"></div><h1>阿修羅</h1><p class="muted">管理画面へログイン</p>
 <?php if (isset($_GET['installed'])): ?><div class="notice success">インストールが完了しました。</div><?php endif; ?>
 <?php if (isset($_GET['password_set'])): ?><div class="notice success">初回パスワードを設定しました。ユーザー名 admin でログインしてください。</div><?php endif; ?>
 <?php if (isset($_GET['db_repaired'])): ?><div class="notice success">データベース接続情報を更新しました。</div><?php endif; ?>
