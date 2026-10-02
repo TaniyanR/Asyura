@@ -89,7 +89,22 @@ final class DistributionService
 
     public function chooseItems(int $targetSiteId,int $limit,bool $imageRequired=false,array $allowedFeedIds=[]):array
     {
-        $limit=max(1,min(100,$limit));$allowedFeedIds=$this->allowedFeedIds($targetSiteId,$allowedFeedIds);$rows=[];$used=[];
+        $limit=max(1,min(100,$limit));$allowedFeedIds=$this->allowedFeedIds($targetSiteId,$allowedFeedIds);
+        $rows=$this->chooseExistingItems($targetSiteId,$limit,$imageRequired,$allowedFeedIds);
+        if($rows)return $rows;
+
+        // Public widgets must not stay blank forever when cron has not run yet.
+        // Recover at most one feed per site and only when the site has not attempted
+        // an RSS fetch in the last five minutes.
+        if($this->recoverOneFeed($targetSiteId)){
+            return $this->chooseExistingItems($targetSiteId,$limit,$imageRequired,$allowedFeedIds);
+        }
+        return [];
+    }
+
+    private function chooseExistingItems(int $targetSiteId,int $limit,bool $imageRequired,array $allowedFeedIds):array
+    {
+        $rows=[];$used=[];
         $allWeights=$this->buildRows($targetSiteId);
         $weights=array_values(array_filter($allWeights,static fn(array $row):bool=>(int)$row['remaining_accesses']>0));
         // Do not render an empty RSS widget merely because every partner has reached
@@ -105,6 +120,55 @@ final class DistributionService
         }
         while(count($rows)<$limit&&$weights){$partner=$this->weightedPartner($weights);if(!$partner)break;$linkId=(int)$partner['reciprocal_link_id'];$item=$this->itemForPartner($targetSiteId,$linkId,$imageRequired,$allowedFeedIds,$used);if(!$item){$weights=array_values(array_filter($weights,static fn(array $row):bool=>(int)$row['reciprocal_link_id']!==$linkId));continue;}$rows[]=$item;$used[]=(int)$item['id'];}
         return $rows;
+    }
+
+    private function recoverOneFeed(int $targetSiteId):bool
+    {
+        // Self-heal legacy links whose rss_url exists but whose rss_feeds row was
+        // never created by an older installation/migration.
+        $this->db->prepare("INSERT INTO rss_feeds (site_id,reciprocal_link_id,name,feed_url,active)
+            SELECT l.site_id,l.id,CONCAT(l.partner_name,' RSS 1'),l.rss_url,1
+            FROM reciprocal_links l
+            WHERE l.site_id=? AND l.status='approved'
+              AND (l.reciprocal_link_enabled=1 OR l.reciprocal_rss_enabled=1)
+              AND l.is_excluded=0 AND l.allocation_type<>'excluded'
+              AND l.rss_url IS NOT NULL AND l.rss_url<>''
+              AND NOT EXISTS (
+                  SELECT 1 FROM rss_feeds f
+                  WHERE f.site_id=l.site_id AND f.reciprocal_link_id=l.id
+              )")->execute([$targetSiteId]);
+
+        $recent=$this->db->prepare("SELECT MAX(f.last_fetched_at)
+            FROM rss_feeds f
+            JOIN reciprocal_links l ON l.id=f.reciprocal_link_id AND l.site_id=f.site_id
+            WHERE f.site_id=? AND f.active=1 AND l.status='approved'
+              AND (l.reciprocal_link_enabled=1 OR l.reciprocal_rss_enabled=1)
+              AND l.is_excluded=0 AND l.allocation_type<>'excluded'");
+        $recent->execute([$targetSiteId]);
+        $last=(string)($recent->fetchColumn()?:'');
+        if($last!==''&&strtotime($last)>time()-300)return false;
+
+        $feed=$this->db->prepare("SELECT f.*
+            FROM rss_feeds f
+            JOIN reciprocal_links l ON l.id=f.reciprocal_link_id AND l.site_id=f.site_id
+            WHERE f.site_id=? AND f.active=1 AND l.status='approved'
+              AND (l.reciprocal_link_enabled=1 OR l.reciprocal_rss_enabled=1)
+              AND l.is_excluded=0 AND l.allocation_type<>'excluded'
+              AND (f.last_fetched_at IS NULL OR f.last_fetched_at<=NOW()-INTERVAL 5 MINUTE)
+            ORDER BY f.last_fetched_at IS NULL DESC,f.last_fetched_at ASC,f.id ASC
+            LIMIT 1");
+        $feed->execute([$targetSiteId]);
+        $row=$feed->fetch();
+        if(!$row)return false;
+
+        try{
+            (new RssService($this->db))->fetchOne($row);
+            return true;
+        }catch(\Throwable $e){
+            $this->db->prepare('UPDATE rss_feeds SET last_fetched_at=NOW(),last_error=? WHERE id=? AND site_id=?')
+                ->execute([mb_substr($e->getMessage(),0,1000),(int)$row['id'],$targetSiteId]);
+            return false;
+        }
     }
 
     private function rescueQuota(int $linkId):int{return 1+(abs(crc32(date('Y-m-d').'|'.$linkId))%3);}
